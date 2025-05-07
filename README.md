@@ -7,7 +7,7 @@
 💡 Constantly learning about malware analysis, network security, and cloud security
 🔐 Advocate for secure coding and proactive defense strategies
 ### �� My Work
-- �� [LinkedIn Profile](https://linkedin.com/in/yourprofile)
+- �� [www.linkedin.com/in/kwame-adade)
 - �� [Resume](#) (Upload your resume as a file to this repository or link to
 an external site)
 ### ��️ Skills
