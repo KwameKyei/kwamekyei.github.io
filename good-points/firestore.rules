@@ -1,0 +1,53 @@
+rules_version = '2';
+// Security rules for Good Points family sync.
+// Paste this into Firebase console → Firestore Database → Rules, then click Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMember(familyId) {
+      return signedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.members;
+    }
+
+    // Each parent's own record of which family they belong to.
+    match /users/{userId} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Invite codes: anyone signed in can look up one code they already know,
+    // but nobody can list all codes. Codes can't be changed once made.
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['familyId'])
+        && request.auth.uid in getAfter(/databases/$(database)/documents/families/$(request.resource.data.familyId)).data.members;
+    }
+
+    match /families/{familyId} {
+      // Start a new family with yourself as the only member.
+      allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
+
+      // Only family members can see the family.
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow update: if signedIn() && (
+        // Members can change anything except the invite code.
+        (request.auth.uid in resource.data.members
+          && request.resource.data.code == resource.data.code)
+        ||
+        // Someone with the correct invite code can add themselves, and nothing else.
+        (request.resource.data.joinWith == resource.data.code
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'joinWith'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet()))
+      );
+
+      allow delete: if false;
+
+      // Points history: family members only.
+      match /log/{entryId} {
+        allow read, write: if isMember(familyId);
+      }
+    }
+  }
+}
