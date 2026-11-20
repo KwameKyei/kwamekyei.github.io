@@ -232,7 +232,20 @@
     return defaults();
   }
   let S = load();
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save on this device'); } }
+  function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save on this device'); } }
+  // Saves on this phone, then lets online sync (sync.js) send the change to the family.
+  function save() { saveLocal(); if (GP.onSave) GP.onSave(); }
+
+  // Small bridge used by sync.js
+  const GP = window.GP = {
+    get state() { return S; },
+    apply(fn) { fn(S); saveLocal(); render(); },
+    render: () => render(),
+    toast: m => toast(m),
+    onSave: null,
+    sync: { status: 'loading', user: '', code: '', members: 0, actions: null }
+  };
+  const synced = () => GP.sync.status === 'on';
 
   const kidById = id => S.kids.find(k => k.id === id);
   const balance = id => S.log.reduce((s, e) => e.kidId === id ? s + e.points : s, 0);
@@ -348,7 +361,9 @@
         const name = nm.value.trim(); if (!name) return;
         const avatar = m.querySelector('input[name=av]:checked')?.value || AVATARS[0];
         const color = m.querySelector('input[name=co]:checked')?.value || COLORS[0];
-        if (kid) Object.assign(kid, { name, avatar, color });
+        const live = kid && kidById(kid.id);
+        if (kid && !live) return closeModal();
+        if (live) Object.assign(live, { name, avatar, color });
         else S.kids.push({ id: uid(), name, avatar, color });
         save(); closeModal(); render();
       };
@@ -391,7 +406,8 @@
         const pts = Math.max(1, Math.min(1000, Math.abs(parseInt(m.querySelector('#pt').value, 10) || 1)));
         if (!label) return;
         const data = { label, emoji, points: good ? pts : -pts };
-        if (beh) Object.assign(beh, data); else S.behaviors.push({ id: uid(), ...data });
+        const live = beh && S.behaviors.find(x => x.id === beh.id);
+        if (live) Object.assign(live, data); else if (!beh) S.behaviors.push({ id: uid(), ...data });
         save(); closeModal(); render();
       };
       const del = m.querySelector('#del');
@@ -421,7 +437,8 @@
         ev.preventDefault();
         const label = m.querySelector('#lb').value.trim(); if (!label) return;
         const data = { label, emoji: m.querySelector('#em').value.trim() || '🎁', cost: Math.max(1, Math.abs(parseInt(m.querySelector('#pt').value, 10) || 1)) };
-        if (rw) Object.assign(rw, data); else S.rewards.push({ id: uid(), ...data });
+        const live = rw && S.rewards.find(x => x.id === rw.id);
+        if (live) Object.assign(live, data); else if (!rw) S.rewards.push({ id: uid(), ...data });
         save(); closeModal(); render();
       };
       const del = m.querySelector('#del');
@@ -541,7 +558,7 @@
       : `<div class="empty"><div class="big">🌟</div><h2>Welcome to Good Points!</h2>
           <p>Kids earn points for being good (sharing, helping, being kind) and lose points for things like fighting. Save up points and trade them for rewards you choose.</p>
           <button class="btn" data-a="add-kid">➕ Add your first child</button></div>`;
-    return `<div class="bar"><h1>⭐ Good Points</h1>${lockBtn()}<button class="icon-btn" data-a="settings" title="Settings" aria-label="Settings">⚙️</button></div>${body}`;
+    return `<div class="bar"><h1>⭐ Good Points${synced() ? ' <span title="Shared with your family" style="font-size:18px">☁️</span>' : ''}</h1>${lockBtn()}<button class="icon-btn" data-a="settings" title="Settings" aria-label="Settings">⚙️</button></div>${body}`;
   }
 
   function viewKid(kid, tab) {
@@ -610,10 +627,54 @@
       ${hero}${tabs}${body}`;
   }
 
+  function syncCard() {
+    const s = GP.sync;
+    const who = s.user ? `Signed in as <b>${esc(s.user)}</b>.` : '';
+    let body;
+    switch (s.status) {
+      case 'loading': case 'connecting': case 'working':
+        body = `<p class="help">${who} Connecting…</p>`; break;
+      case 'unavailable':
+        body = `<p class="help">Online sync couldn't load. Check your internet connection and reopen the app. Points still save on this phone.</p>`; break;
+      case 'error':
+        body = `<p class="help">${who} ${esc(s.error || 'Sync problem.')}</p><div class="btns"><button class="btn sm ghost" data-a="sync-signout">Sign out</button></div>`; break;
+      case 'signed-out':
+        body = `<p class="help">Share points between parents' phones. Sign in, then create a family or join one with an invite code.</p>
+          <div class="btns"><button class="btn sm" data-a="sync-signin">Sign in with Google</button></div>`; break;
+      case 'no-family':
+        body = `<p class="help">${who} Now set up your family:</p>
+          <div class="srow"><div class="tx"><b>First parent</b><br><small class="muted">Puts this phone's children and points online and gives you an invite code.</small></div><button class="btn sm" data-a="sync-create">Create family</button></div>
+          <div class="srow"><div class="tx"><b>Other parent</b><br><small class="muted">Enter the code from the first parent.</small></div><button class="btn sm" data-a="sync-join">Join with code</button></div>
+          <div class="btns"><button class="btn sm ghost" data-a="sync-signout">Sign out</button></div>`; break;
+      case 'on':
+        body = `<p class="help">✅ ${who} Points are shared with your family${s.members > 1 ? ` (${s.members} parents)` : ''}.</p>
+          <div class="srow"><div class="tx">Invite code for the other parent<br><b style="font-size:24px;letter-spacing:.08em">${esc(s.code)}</b></div><button class="btn sm" data-a="sync-share">Share</button></div>
+          <div class="btns"><button class="btn sm ghost" data-a="sync-signout">Sign out</button></div>`; break;
+      default: body = '';
+    }
+    return `<div class="card"><h2>☁️ Family sync</h2>${body}</div>`;
+  }
+
+  function joinForm() {
+    const hasLocal = S.kids.length > 0;
+    openModal(`
+      <form class="m" id="f">
+        <h2>Join your family</h2>
+        <label for="cd">Invite code</label>
+        <input type="text" id="cd" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-2345" style="text-transform:uppercase;letter-spacing:.1em;font-size:22px;text-align:center">
+        ${hasLocal ? `<p class="muted" style="font-size:15px">The children and points already on this phone will be replaced by your family's. Download a backup first if you want to keep them.</p>` : ''}
+        <div class="acts-row"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Join</button></div>
+      </form>`, m => {
+      const cd = m.querySelector('#cd'); cd.focus();
+      m.querySelector('#f').onsubmit = ev => { ev.preventDefault(); closeModal(); GP.sync.actions.joinFamily(cd.value); };
+    });
+  }
+
   function viewSettings() {
     const good = S.behaviors.filter(b => b.points > 0), bad = S.behaviors.filter(b => b.points < 0);
     const behRow = b => `<div class="srow"><div class="em">${esc(b.emoji)}</div><div class="tx">${esc(b.label)}</div><div class="v ${b.points > 0 ? 'g' : 'b'}">${sign(b.points)}</div><button class="btn sm ghost" data-a="edit-beh" data-id="${b.id}">Edit</button></div>`;
     return `<div class="bar"><button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>⚙️ Settings</h1>${lockBtn()}</div>
+      ${syncCard()}
       <div class="card"><h2>👧 Children</h2>
         ${S.kids.map(k => `<div class="srow"><div class="em">${k.avatar}</div><div class="tx">${esc(k.name)}</div><div class="v">${balance(k.id)} pts</div><button class="btn sm ghost" data-a="edit-kid" data-id="${k.id}">Edit</button></div>`).join('') || '<p class="help">No children yet.</p>'}
         <div class="btns"><button class="btn sm" data-a="add-kid">➕ Add child</button></div></div>
@@ -626,7 +687,7 @@
         <div class="btns"><button class="btn sm" data-a="add-rw">➕ Add reward</button></div></div>
       <div class="card"><h2>🔒 Parent PIN</h2><p class="help">${S.settings.pin ? 'A PIN is set. Kids can look, but changes need the PIN.' : 'No PIN set. Anyone using this device can change points.'}</p>
         <div class="btns"><button class="btn sm" data-a="pin">${S.settings.pin ? 'Change or remove PIN' : 'Set a PIN'}</button></div></div>
-      <div class="card"><h2>💾 Backup</h2><p class="help">Points are saved on this device only. Download a backup to move to a new phone or keep data safe.</p>
+      <div class="card"><h2>💾 Backup</h2><p class="help">${synced() ? 'Your points are saved online. You can also download a copy to keep.' : 'Points are saved on this device only. Download a backup to move to a new phone or keep data safe.'}</p>
         <div class="btns"><button class="btn sm ghost" data-a="export">⬇️ Download backup</button><button class="btn sm ghost" data-a="import">⬆️ Restore backup</button></div></div>
       <div class="card"><h2>🧹 Start over</h2><p class="help">Erase points history but keep children, behaviors and rewards, or erase everything.</p>
         <div class="btns"><button class="btn sm ghost" data-a="reset-points">Reset all points</button><button class="btn sm danger" data-a="reset-all">Erase everything</button></div></div>`;
@@ -670,10 +731,15 @@
       case 'add-rw': rewardForm(); break;
       case 'edit-rw': rewardForm(S.rewards.find(x => x.id === id)); break;
       case 'pin': pinForm(); break;
+      case 'sync-signin': GP.sync.actions && GP.sync.actions.signIn(); break;
+      case 'sync-signout': confirmBox('Sign out?', 'This phone will stop sharing points with your family. A copy of the current points stays on this phone.', 'Sign out', false, () => GP.sync.actions.signOut()); break;
+      case 'sync-create': confirmBox('Create a family?', `This puts this phone's ${S.kids.length} ${S.kids.length === 1 ? 'child' : 'children'}, behaviors, rewards and points online so other parents can join.`, 'Create family', false, () => GP.sync.actions.createFamily()); break;
+      case 'sync-join': joinForm(); break;
+      case 'sync-share': GP.sync.actions.shareCode(); break;
       case 'export': exportData(); break;
       case 'import': importData(); break;
       case 'reset-points': confirmBox('Reset all points?', 'Every child goes back to 0 points and history is cleared. Children, behaviors and rewards stay.', 'Reset points', true, () => { S.log = []; save(); render(); toast('All points reset'); }); break;
-      case 'reset-all': confirmBox('Erase everything?', 'This deletes all children, points, behaviors, rewards and your PIN on this device. Download a backup first if you might want it.', 'Erase everything', true, () => { S = defaults(); unlockedUntil = 0; save(); location.hash = '#/'; render(); }); break;
+      case 'reset-all': confirmBox('Erase everything?', (synced() ? 'This deletes all children, points, behaviors, rewards and the PIN for your whole family, on every phone.' : 'This deletes all children, points, behaviors, rewards and your PIN on this device.') + ' Download a backup first if you might want it.', 'Erase everything', true, () => { S = defaults(); unlockedUntil = 0; save(); location.hash = '#/'; render(); }); break;
     }
   });
 
@@ -685,5 +751,6 @@
   }
 })();
 </script>
+<script type="module" src="sync.js"></script>
 </body>
 </html>
