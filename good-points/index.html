@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Good Points</title>
+<meta name="description" content="Kids earn points for good behavior, lose points for bad behavior, and trade points for rewards.">
+<meta name="theme-color" content="#6c5ce7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Good Points">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fff8ef; --card:#ffffff; --ink:#2d2a3e; --muted:#7a7590; --line:#efe6d8;
+    --brand:#6c5ce7; --brand-ink:#ffffff; --brand-soft:#efecff;
+    --good:#16a864; --good-bg:#e4f7ec; --good-line:#bfe9d2;
+    --bad:#e5484d; --bad-bg:#fdecec; --bad-line:#f6c9ca;
+    --gold:#f5b301; --radius:22px; --shadow:0 4px 0 rgba(45,42,62,.08), 0 10px 24px rgba(45,42,62,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Fredoka", ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size:17px; line-height:1.35; -webkit-tap-highlight-color:transparent;
+    min-height:100vh; padding-bottom:env(safe-area-inset-bottom);
+  }
+  button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+  input,select{font:inherit;color:inherit}
+  .wrap{max-width:860px;margin:0 auto;padding:16px 16px 96px}
+
+  /* top bar */
+  .bar{display:flex;align-items:center;gap:10px;margin:4px 0 18px}
+  .bar h1{font-size:28px;margin:0;flex:1;display:flex;align-items:center;gap:8px;font-weight:700}
+  .bar .title{flex:1;min-width:0}
+  .icon-btn{width:46px;height:46px;border-radius:14px;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;font-size:22px;flex:none}
+  .icon-btn:active{transform:translateY(2px)}
+
+  /* home grid */
+  .kids{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+  .kid-card{position:relative;text-align:left;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;display:flex;flex-direction:column;gap:6px;overflow:hidden;transition:transform .1s}
+  .kid-card:active{transform:scale(.98)}
+  .kid-card::before{content:"";position:absolute;inset:0 0 auto 0;height:72px;background:var(--kc);opacity:.35}
+  .kid-card .av{position:relative;width:76px;height:76px;border-radius:50%;background:var(--kc);display:grid;place-items:center;font-size:44px;border:4px solid #fff;box-shadow:0 3px 0 rgba(0,0,0,.08)}
+  .kid-card .nm{font-size:22px;font-weight:600;margin-top:4px;overflow-wrap:anywhere}
+  .kid-card .pts{font-size:36px;font-weight:700;line-height:1}
+  .kid-card .pts small{font-size:16px;font-weight:500;color:var(--muted)}
+  .kid-card .today{font-size:14px;color:var(--muted)}
+  .add-card{border:3px dashed var(--line);border-radius:var(--radius);min-height:200px;display:grid;place-items:center;color:var(--muted);font-weight:600;font-size:18px;background:transparent}
+  .add-card span{font-size:40px;display:block;text-align:center}
+
+  .empty{text-align:center;padding:40px 16px}
+  .empty .big{font-size:72px}
+  .empty h2{margin:8px 0 6px}
+  .empty p{color:var(--muted);margin:0 auto 22px;max-width:420px}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 20px;border-radius:16px;font-weight:600;background:var(--brand);color:var(--brand-ink);box-shadow:0 4px 0 #4b3fc4}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #4b3fc4}
+  .btn.ghost{background:var(--card);color:var(--ink);box-shadow:0 4px 0 var(--line)}
+  .btn.danger{background:var(--bad);box-shadow:0 4px 0 #b3343a}
+  .btn.good{background:var(--good);box-shadow:0 4px 0 #0f7d4a}
+  .btn[disabled]{opacity:.45;pointer-events:none}
+  .btn.sm{padding:8px 14px;font-size:15px;border-radius:12px}
+
+  /* kid screen */
+  .hero{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;background:var(--kc);opacity:.18}
+  .hero > *{position:relative}
+  .hero .av{width:96px;height:96px;border-radius:50%;background:var(--kc);display:grid;place-items:center;font-size:58px;border:5px solid #fff;flex:none}
+  .hero .info{flex:1;min-width:180px}
+  .hero .nm{font-size:26px;font-weight:700;overflow-wrap:anywhere}
+  .hero .pts{font-size:56px;font-weight:700;line-height:1;margin:2px 0}
+  .hero .pts small{font-size:20px;color:var(--muted);font-weight:500}
+  .hero .pts.neg{color:var(--bad)}
+  .week{display:flex;gap:10px;flex-wrap:wrap;font-size:15px}
+  .chip{padding:4px 10px;border-radius:999px;background:#fff;font-weight:600}
+  .chip.g{color:var(--good)} .chip.b{color:var(--bad)}
+  .goal{width:100%;margin-top:4px}
+  .goal .lbl{font-size:15px;color:var(--muted);margin-bottom:6px}
+  .goal .lbl b{color:var(--ink)}
+  .track{height:14px;border-radius:99px;background:#fff;overflow:hidden}
+  .fill{height:100%;background:linear-gradient(90deg,var(--gold),#ffd54a);border-radius:99px;transition:width .5s}
+
+  .tabs{display:flex;gap:8px;margin:18px 0 14px;background:var(--card);padding:6px;border-radius:18px;box-shadow:var(--shadow)}
+  .tabs button{flex:1;padding:11px 6px;border-radius:13px;font-weight:600;color:var(--muted)}
+  .tabs button.on{background:var(--brand);color:#fff}
+
+  h3.sec{font-size:19px;margin:18px 4px 10px;display:flex;align-items:center;gap:8px}
+  .acts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .act{border-radius:18px;padding:14px 12px;text-align:left;display:flex;flex-direction:column;gap:6px;min-height:96px;border:2px solid;transition:transform .08s}
+  .act:active{transform:scale(.96)}
+  .act .em{font-size:30px;line-height:1}
+  .act .lb{font-weight:500;font-size:15px;line-height:1.2;flex:1}
+  .act .pv{font-weight:700;font-size:18px}
+  .act.good{background:var(--good-bg);border-color:var(--good-line)} .act.good .pv{color:var(--good)}
+  .act.bad{background:var(--bad-bg);border-color:var(--bad-line)} .act.bad .pv{color:var(--bad)}
+  .act.custom{background:var(--brand-soft);border-color:#d9d3ff;border-style:dashed} .act.custom .pv{color:var(--brand)}
+
+  .list{display:flex;flex-direction:column;gap:10px}
+  .row{background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:12px 14px;display:flex;align-items:center;gap:12px}
+  .row .em{font-size:30px;width:42px;text-align:center;flex:none}
+  .row .tx{flex:1;min-width:0}
+  .row .tx b{display:block;font-weight:600;overflow-wrap:anywhere}
+  .row .tx small{color:var(--muted);font-size:14px}
+  .row .v{font-weight:700;font-size:18px;white-space:nowrap}
+  .row .v.g{color:var(--good)} .row .v.b{color:var(--bad)} .row .v.r{color:var(--brand)}
+  .x{width:34px;height:34px;border-radius:10px;color:var(--muted);font-size:18px;flex:none}
+  .x:hover{background:var(--bg)}
+  .day{font-size:14px;font-weight:600;color:var(--muted);margin:16px 6px 6px;text-transform:uppercase;letter-spacing:.04em}
+  .muted{color:var(--muted)}
+
+  /* settings */
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .card h2{font-size:20px;margin:0 0 4px}
+  .card p.help{margin:0 0 12px;color:var(--muted);font-size:15px}
+  .srow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .srow:first-of-type{border-top:0}
+  .srow .em{font-size:24px;width:34px;text-align:center}
+  .srow .tx{flex:1;min-width:0;overflow-wrap:anywhere}
+  .srow .v{font-weight:700}
+  .srow .v.g{color:var(--good)} .srow .v.b{color:var(--bad)}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+
+  /* modal */
+  dialog{border:0;border-radius:24px;padding:0;width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:var(--card);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  dialog::backdrop{background:rgba(35,30,60,.45)}
+  .m{padding:20px}
+  .m h2{margin:0 0 14px;font-size:22px}
+  .m label{display:block;font-weight:600;font-size:15px;margin:12px 0 6px}
+  .m input[type=text],.m input[type=number],.m input[type=password],.m input[type=tel]{width:100%;padding:12px 14px;border-radius:14px;border:2px solid var(--line);background:var(--bg);font-size:17px;outline:none}
+  .m input:focus{border-color:var(--brand)}
+  .m .acts-row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
+  .picker{display:flex;flex-wrap:wrap;gap:8px}
+  .picker label{margin:0}
+  .picker input{position:absolute;opacity:0;pointer-events:none}
+  .picker span{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;font-size:26px;background:var(--bg);border:3px solid transparent;cursor:pointer}
+  .picker input:checked + span{border-color:var(--brand);background:var(--brand-soft)}
+  .picker input:focus-visible + span{outline:2px solid var(--brand);outline-offset:2px}
+  .picker.colors span{border-radius:50%}
+  .seg{display:flex;gap:8px}
+  .seg label{flex:1;margin:0}
+  .seg input{position:absolute;opacity:0}
+  .seg span{display:block;text-align:center;padding:11px;border-radius:14px;background:var(--bg);border:2px solid var(--line);font-weight:600}
+  .seg input:checked + span.g{background:var(--good-bg);border-color:var(--good);color:var(--good)}
+  .seg input:checked + span.b{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}
+  .pin-in{letter-spacing:.5em;text-align:center;font-size:28px !important}
+  .err{color:var(--bad);font-size:14px;min-height:18px;margin-top:6px}
+
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,140%);background:var(--ink);color:#fff;padding:12px 14px 12px 18px;border-radius:16px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);transition:transform .25s;z-index:50;width:max-content;max-width:calc(100vw - 32px)}
+  .toast.show{transform:translate(-50%,0)}
+  .toast button{color:#ffd54a;font-weight:600;padding:6px 10px;border-radius:10px}
+
+  /* effects */
+  .burst{position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden}
+  .burst i{position:absolute;top:-40px;font-style:normal;font-size:28px;animation:fall 1.6s ease-in forwards}
+  @keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.9}}
+  .big-pop{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%) scale(.4);font-size:84px;font-weight:700;pointer-events:none;z-index:61;opacity:0;animation:pop 1s ease-out forwards;text-shadow:0 4px 0 rgba(0,0,0,.08)}
+  @keyframes pop{20%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}70%{opacity:1;transform:translate(-50%,-60%) scale(1)}100%{opacity:0;transform:translate(-50%,-90%) scale(.9)}}
+  .shake{animation:shake .45s}
+  @keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+  @media (prefers-reduced-motion:reduce){.burst,.big-pop{display:none}.shake{animation:none}}
+
+  @media (max-width:480px){
+    .bar h1{font-size:24px}
+    .kids{grid-template-columns:1fr 1fr;gap:12px}
+    .kid-card{padding:14px}
+    .kid-card .av{width:60px;height:60px;font-size:34px}
+    .kid-card .nm{font-size:18px}
+    .kid-card .pts{font-size:30px}
+    .acts{grid-template-columns:1fr 1fr}
+    .hero .pts{font-size:46px}
+    .hero .av{width:78px;height:78px;font-size:46px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<dialog id="modal"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg"></span><button id="toastUndo">Undo</button></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- data ----------
+  const KEY = 'goodPoints.v1';
+  const AVATARS = ['🦁','🐼','🐯','🦊','🐸','🐵','🦄','🐶','🐱','🐰','🐻','🐨','🐧','🦖','🐙','🦋','🐝','🐬','🚀','⚽','🌸','🌈'];
+  const COLORS  = ['#ff7675','#fdcb6e','#55efc4','#74b9ff','#a29bfe','#fd79a8','#81ecec','#fab1a0','#badc58','#f8a5c2'];
+
+  const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+
+  function defaults() {
+    const b = (emoji, label, points) => ({ id: uid(), emoji, label, points });
+    return {
+      kids: [],
+      behaviors: [
+        b('🤝','Shared with others',5), b('🕊️','Played nicely, no fighting',5), b('💛','Was kind',5),
+        b('🙋','Helped out',5), b('🙏','Said please & thank you',2), b('👂','Listened the first time',3),
+        b('🧸','Cleaned up toys',3), b('📚','Did homework',5), b('🍽️','Ate their meal',2),
+        b('🛏️','Went to bed on time',3), b('🗣️','Told the truth',5),
+        b('👊','Fighting or hitting',-5), b('🙉','Not listening',-3), b('🤥','Lying',-5),
+        b('😤','Tantrum',-3), b('🗯️','Rude words',-3), b('🚫','Refused to share',-2), b('😠','Being mean',-5)
+      ],
+      rewards: [
+        { id: uid(), emoji:'🍦', label:'Ice cream treat', cost:20 },
+        { id: uid(), emoji:'📺', label:'30 min extra screen time', cost:15 },
+        { id: uid(), emoji:'🌙', label:'Stay up 15 min later', cost:20 },
+        { id: uid(), emoji:'🏞️', label:'Trip to the park', cost:30 },
+        { id: uid(), emoji:'🍕', label:'Pick what\'s for dinner', cost:40 },
+        { id: uid(), emoji:'🎬', label:'Movie night pick', cost:50 },
+        { id: uid(), emoji:'🧸', label:'New toy', cost:100 }
+      ],
+      log: [],
+      settings: { pin: '' }
+    };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.kids)) return Object.assign(defaults(), d, { settings: Object.assign({ pin:'' }, d.settings) });
+      }
+    } catch (e) {}
+    return defaults();
+  }
+  let S = load();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save on this device'); } }
+
+  const kidById = id => S.kids.find(k => k.id === id);
+  const balance = id => S.log.reduce((s, e) => e.kidId === id ? s + e.points : s, 0);
+  const startOfDay = (d = new Date()) => { const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); };
+  const startOfWeek = () => { const x = new Date(); x.setHours(0,0,0,0); const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x.getTime(); };
+  function earned(id, since) {
+    let plus = 0, minus = 0;
+    for (const e of S.log) if (e.kidId === id && e.ts >= since && e.type !== 'reward') { if (e.points > 0) plus += e.points; else minus += e.points; }
+    return { plus, minus };
+  }
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sign = n => (n > 0 ? '+' : '') + n;
+
+  // ---------- parent lock ----------
+  let unlockedUntil = 0;
+  const isUnlocked = () => !S.settings.pin || Date.now() < unlockedUntil;
+  function requireParent(cb) {
+    if (isUnlocked()) { unlockedUntil = Date.now() + 10 * 60 * 1000; return cb(); }
+    openModal(`
+      <form class="m" id="pinForm">
+        <h2>🔒 Parent PIN</h2>
+        <p class="muted" style="margin:0">Enter your PIN to make changes.</p>
+        <input class="pin-in" id="pinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="8" style="margin-top:14px" aria-label="PIN">
+        <div class="err" id="pinErr"></div>
+        <div class="acts-row"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Unlock</button></div>
+      </form>`, m => {
+      const inp = m.querySelector('#pinIn'); inp.focus();
+      m.querySelector('#pinForm').onsubmit = ev => {
+        ev.preventDefault();
+        if (inp.value === S.settings.pin) { unlockedUntil = Date.now() + 10 * 60 * 1000; closeModal(); render(); cb(); }
+        else { m.querySelector('#pinErr').textContent = 'That PIN is not right. Try again.'; inp.value = ''; inp.focus(); m.querySelector('.m').classList.remove('shake'); void m.offsetWidth; m.querySelector('.m').classList.add('shake'); }
+      };
+    });
+  }
+
+  // ---------- modal ----------
+  const modal = document.getElementById('modal');
+  function openModal(html, mount) {
+    modal.innerHTML = html;
+    if (!modal.open) modal.showModal();
+    modal.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModal);
+    mount && mount(modal);
+  }
+  function closeModal() { if (modal.open) modal.close(); }
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  function confirmBox(title, msg, okLabel, danger, cb) {
+    openModal(`<div class="m"><h2>${title}</h2><p style="margin:0">${msg}</p>
+      <div class="acts-row"><button class="btn ghost" data-close>Cancel</button><button class="btn ${danger ? 'danger' : ''}" id="ok">${okLabel}</button></div></div>`,
+      m => { m.querySelector('#ok').onclick = () => { closeModal(); cb(); }; m.querySelector('#ok').focus(); });
+  }
+
+  // ---------- toast & effects ----------
+  const toastEl = document.getElementById('toast'), toastMsg = document.getElementById('toastMsg'), toastUndo = document.getElementById('toastUndo');
+  let toastTimer, undoFn;
+  function toast(msg, undo) {
+    toastMsg.textContent = msg; undoFn = undo; toastUndo.style.display = undo ? '' : 'none';
+    toastEl.classList.add('show'); clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4500);
+  }
+  toastUndo.onclick = () => { if (undoFn) undoFn(); undoFn = null; toastEl.classList.remove('show'); };
+
+  function celebrate(points, emoji) {
+    const pop = document.createElement('div');
+    pop.className = 'big-pop'; pop.textContent = sign(points);
+    pop.style.color = points >= 0 ? 'var(--good)' : 'var(--bad)';
+    document.body.appendChild(pop); setTimeout(() => pop.remove(), 1100);
+    if (points > 0) {
+      const box = document.createElement('div'); box.className = 'burst';
+      const bits = ['⭐','🌟','✨', emoji, '🎉', '💛'];
+      for (let i = 0; i < 26; i++) {
+        const s = document.createElement('i'); s.textContent = bits[i % bits.length];
+        s.style.left = Math.random() * 100 + 'vw'; s.style.animationDelay = Math.random() * .35 + 's';
+        s.style.fontSize = 18 + Math.random() * 22 + 'px'; box.appendChild(s);
+      }
+      document.body.appendChild(box); setTimeout(() => box.remove(), 2200);
+      navigator.vibrate && navigator.vibrate(30);
+    } else {
+      const h = document.querySelector('.hero'); if (h) { h.classList.remove('shake'); void h.offsetWidth; h.classList.add('shake'); }
+      navigator.vibrate && navigator.vibrate([40, 40, 40]);
+    }
+  }
+
+  // ---------- actions ----------
+  function addEntry(kid, type, label, emoji, points, note) {
+    const entry = { id: uid(), kidId: kid.id, type, label, emoji, points, note: note || '', ts: Date.now() };
+    S.log.push(entry); save(); render();
+    celebrate(points, emoji);
+    const verb = type === 'reward' ? `${kid.name} redeemed ${label}` : `${sign(points)} for ${kid.name}: ${label}`;
+    toast(verb, () => { S.log = S.log.filter(e => e.id !== entry.id); save(); render(); });
+  }
+
+  function kidForm(kid) {
+    const k = kid || { name: '', avatar: AVATARS[S.kids.length % AVATARS.length], color: COLORS[S.kids.length % COLORS.length] };
+    openModal(`
+      <form class="m" id="f">
+        <h2>${kid ? 'Edit child' : 'Add a child'}</h2>
+        <label for="nm">Name</label>
+        <input type="text" id="nm" maxlength="24" required value="${esc(k.name)}" placeholder="e.g. Ama">
+        <label>Avatar</label>
+        <div class="picker">${AVATARS.map(a => `<label><input type="radio" name="av" value="${a}" ${a === k.avatar ? 'checked' : ''}><span>${a}</span></label>`).join('')}</div>
+        <label>Color</label>
+        <div class="picker colors">${COLORS.map(c => `<label><input type="radio" name="co" value="${c}" ${c === k.color ? 'checked' : ''}><span style="background:${c}"></span></label>`).join('')}</div>
+        <div class="acts-row">
+          ${kid ? '<button type="button" class="btn danger" id="del" style="margin-right:auto">Delete</button>' : ''}
+          <button type="button" class="btn ghost" data-close>Cancel</button>
+          <button class="btn">${kid ? 'Save' : 'Add'}</button>
+        </div>
+      </form>`, m => {
+      const nm = m.querySelector('#nm'); if (!kid) nm.focus();
+      m.querySelector('#f').onsubmit = ev => {
+        ev.preventDefault();
+        const name = nm.value.trim(); if (!name) return;
+        const avatar = m.querySelector('input[name=av]:checked')?.value || AVATARS[0];
+        const color = m.querySelector('input[name=co]:checked')?.value || COLORS[0];
+        if (kid) Object.assign(kid, { name, avatar, color });
+        else S.kids.push({ id: uid(), name, avatar, color });
+        save(); closeModal(); render();
+      };
+      const del = m.querySelector('#del');
+      if (del) del.onclick = () => confirmBox('Delete ' + esc(kid.name) + '?', 'This removes ' + esc(kid.name) + ' and all of their points history. This can\'t be undone.', 'Delete', true, () => {
+        S.kids = S.kids.filter(x => x.id !== kid.id); S.log = S.log.filter(e => e.kidId !== kid.id); save();
+        if (location.hash.includes(kid.id)) location.hash = '#/'; else render();
+      });
+    });
+  }
+
+  function behaviorForm(beh, kind) {
+    const isGood = beh ? beh.points > 0 : kind !== 'bad';
+    const b = beh || { emoji: isGood ? '⭐' : '⚠️', label: '', points: isGood ? 3 : -3 };
+    openModal(`
+      <form class="m" id="f">
+        <h2>${beh ? 'Edit behavior' : (isGood ? 'Add a good behavior' : 'Add an oops behavior')}</h2>
+        <div class="seg">
+          <label><input type="radio" name="k" value="g" ${isGood ? 'checked' : ''}><span class="g">👍 Earns points</span></label>
+          <label><input type="radio" name="k" value="b" ${!isGood ? 'checked' : ''}><span class="b">👎 Loses points</span></label>
+        </div>
+        <label for="lb">What happened?</label>
+        <input type="text" id="lb" maxlength="40" required value="${esc(b.label)}" placeholder="e.g. Brushed teeth">
+        <div style="display:flex;gap:10px">
+          <div style="width:90px"><label for="em">Emoji</label><input type="text" id="em" maxlength="4" value="${esc(b.emoji)}" style="text-align:center;font-size:22px"></div>
+          <div style="flex:1"><label for="pt">Points</label><input type="number" id="pt" min="1" max="1000" required value="${Math.abs(b.points)}"></div>
+        </div>
+        <div class="acts-row">
+          ${beh ? '<button type="button" class="btn danger" id="del" style="margin-right:auto">Delete</button>' : ''}
+          <button type="button" class="btn ghost" data-close>Cancel</button>
+          <button class="btn">Save</button>
+        </div>
+      </form>`, m => {
+      if (!beh) m.querySelector('#lb').focus();
+      m.querySelector('#f').onsubmit = ev => {
+        ev.preventDefault();
+        const good = m.querySelector('input[name=k]:checked').value === 'g';
+        const label = m.querySelector('#lb').value.trim();
+        const emoji = m.querySelector('#em').value.trim() || (good ? '⭐' : '⚠️');
+        const pts = Math.max(1, Math.min(1000, Math.abs(parseInt(m.querySelector('#pt').value, 10) || 1)));
+        if (!label) return;
+        const data = { label, emoji, points: good ? pts : -pts };
+        if (beh) Object.assign(beh, data); else S.behaviors.push({ id: uid(), ...data });
+        save(); closeModal(); render();
+      };
+      const del = m.querySelector('#del');
+      if (del) del.onclick = () => { S.behaviors = S.behaviors.filter(x => x.id !== beh.id); save(); closeModal(); render(); };
+    });
+  }
+
+  function rewardForm(rw) {
+    const r = rw || { emoji: '🎁', label: '', cost: 20 };
+    openModal(`
+      <form class="m" id="f">
+        <h2>${rw ? 'Edit reward' : 'Add a reward'}</h2>
+        <label for="lb">Reward</label>
+        <input type="text" id="lb" maxlength="40" required value="${esc(r.label)}" placeholder="e.g. Trip to the zoo">
+        <div style="display:flex;gap:10px">
+          <div style="width:90px"><label for="em">Emoji</label><input type="text" id="em" maxlength="4" value="${esc(r.emoji)}" style="text-align:center;font-size:22px"></div>
+          <div style="flex:1"><label for="pt">Cost (points)</label><input type="number" id="pt" min="1" max="100000" required value="${r.cost}"></div>
+        </div>
+        <div class="acts-row">
+          ${rw ? '<button type="button" class="btn danger" id="del" style="margin-right:auto">Delete</button>' : ''}
+          <button type="button" class="btn ghost" data-close>Cancel</button>
+          <button class="btn">Save</button>
+        </div>
+      </form>`, m => {
+      if (!rw) m.querySelector('#lb').focus();
+      m.querySelector('#f').onsubmit = ev => {
+        ev.preventDefault();
+        const label = m.querySelector('#lb').value.trim(); if (!label) return;
+        const data = { label, emoji: m.querySelector('#em').value.trim() || '🎁', cost: Math.max(1, Math.abs(parseInt(m.querySelector('#pt').value, 10) || 1)) };
+        if (rw) Object.assign(rw, data); else S.rewards.push({ id: uid(), ...data });
+        save(); closeModal(); render();
+      };
+      const del = m.querySelector('#del');
+      if (del) del.onclick = () => { S.rewards = S.rewards.filter(x => x.id !== rw.id); save(); closeModal(); render(); };
+    });
+  }
+
+  function customPoints(kid) {
+    openModal(`
+      <form class="m" id="f">
+        <h2>✏️ Custom points for ${esc(kid.name)}</h2>
+        <label for="rs">Reason</label>
+        <input type="text" id="rs" maxlength="50" placeholder="e.g. Helped grandma carry bags">
+        <label for="pt">Points</label>
+        <input type="number" id="pt" min="1" max="1000" value="5" required>
+        <div class="acts-row">
+          <button type="button" class="btn ghost" data-close>Cancel</button>
+          <button type="button" class="btn danger" id="minus">− Take away</button>
+          <button type="button" class="btn good" id="plus">+ Give</button>
+        </div>
+      </form>`, m => {
+      m.querySelector('#rs').focus();
+      const go = dir => {
+        const n = Math.max(1, Math.min(1000, Math.abs(parseInt(m.querySelector('#pt').value, 10) || 0)));
+        const reason = m.querySelector('#rs').value.trim() || (dir > 0 ? 'Bonus points' : 'Points taken away');
+        closeModal(); addEntry(kid, 'custom', reason, dir > 0 ? '🌟' : '⚠️', dir * n);
+      };
+      m.querySelector('#plus').onclick = () => go(1);
+      m.querySelector('#minus').onclick = () => go(-1);
+      m.querySelector('#f').onsubmit = ev => { ev.preventDefault(); go(1); };
+    });
+  }
+
+  function pinForm() {
+    const has = !!S.settings.pin;
+    openModal(`
+      <form class="m" id="f">
+        <h2>🔒 Parent PIN</h2>
+        <p class="muted" style="margin:0">With a PIN, kids can see their points but only a parent can add, take away, or redeem points.</p>
+        <label for="p1">${has ? 'New PIN' : 'Choose a PIN'} (4–8 digits)</label>
+        <input class="pin-in" type="password" id="p1" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" autocomplete="new-password">
+        <label for="p2">Type it again</label>
+        <input class="pin-in" type="password" id="p2" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        <div class="err" id="er"></div>
+        <div class="acts-row">
+          ${has ? '<button type="button" class="btn danger" id="rm" style="margin-right:auto">Remove PIN</button>' : ''}
+          <button type="button" class="btn ghost" data-close>Cancel</button>
+          <button class="btn">Save PIN</button>
+        </div>
+      </form>`, m => {
+      m.querySelector('#p1').focus();
+      m.querySelector('#f').onsubmit = ev => {
+        ev.preventDefault();
+        const a = m.querySelector('#p1').value, b = m.querySelector('#p2').value;
+        if (!/^\d{4,8}$/.test(a)) return m.querySelector('#er').textContent = 'Use 4 to 8 numbers.';
+        if (a !== b) return m.querySelector('#er').textContent = 'The two PINs don\'t match.';
+        S.settings.pin = a; unlockedUntil = Date.now() + 10 * 60 * 1000; save(); closeModal(); render(); toast('PIN saved');
+      };
+      const rm = m.querySelector('#rm');
+      if (rm) rm.onclick = () => { S.settings.pin = ''; save(); closeModal(); render(); toast('PIN removed'); };
+    });
+  }
+
+  function exportData() {
+    const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'good-points-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function importData() {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json';
+    inp.onchange = () => {
+      const file = inp.files[0]; if (!file) return;
+      file.text().then(txt => {
+        let d; try { d = JSON.parse(txt); } catch (e) { return toast('That file isn\'t a Good Points backup'); }
+        if (!d || !Array.isArray(d.kids) || !Array.isArray(d.log)) return toast('That file isn\'t a Good Points backup');
+        confirmBox('Restore backup?', `This replaces everything on this device with the backup (${d.kids.length} children, ${d.log.length} history items).`, 'Restore', true, () => {
+          S = Object.assign(defaults(), d, { settings: Object.assign({ pin: '' }, d.settings) }); save(); location.hash = '#/'; render(); toast('Backup restored');
+        });
+      });
+    };
+    inp.click();
+  }
+
+  // ---------- views ----------
+  const app = document.getElementById('app');
+
+  function route() {
+    const p = location.hash.replace(/^#\/?/, '').split('/');
+    if (p[0] === 'kid' && kidById(p[1])) return { view: 'kid', kid: kidById(p[1]), tab: ['earn','rewards','history'].includes(p[2]) ? p[2] : 'earn' };
+    if (p[0] === 'settings') return { view: 'settings' };
+    return { view: 'home' };
+  }
+
+  function lockBtn() {
+    if (!S.settings.pin) return '';
+    return isUnlocked()
+      ? `<button class="icon-btn" data-a="lock" title="Lock parent mode" aria-label="Lock parent mode">🔓</button>`
+      : `<button class="icon-btn" data-a="unlock" title="Parent unlock" aria-label="Parent unlock">🔒</button>`;
+  }
+
+  function viewHome() {
+    const cards = S.kids.map(k => {
+      const bal = balance(k.id), t = earned(k.id, startOfDay());
+      const today = t.plus || t.minus ? `Today: <b style="color:var(--good)">+${t.plus}</b>${t.minus ? ` · <b style="color:var(--bad)">${t.minus}</b>` : ''}` : 'No points yet today';
+      return `<button class="kid-card" style="--kc:${k.color}" data-a="open" data-id="${k.id}">
+        <div class="av">${k.avatar}</div>
+        <div class="nm">${esc(k.name)}</div>
+        <div class="pts" ${bal < 0 ? 'style="color:var(--bad)"' : ''}>${bal} <small>points</small></div>
+        <div class="today">${today}</div>
+      </button>`;
+    }).join('');
+    const body = S.kids.length
+      ? `<div class="kids">${cards}<button class="add-card" data-a="add-kid"><div><span>➕</span>Add child</div></button></div>`
+      : `<div class="empty"><div class="big">🌟</div><h2>Welcome to Good Points!</h2>
+          <p>Kids earn points for being good (sharing, helping, being kind) and lose points for things like fighting. Save up points and trade them for rewards you choose.</p>
+          <button class="btn" data-a="add-kid">➕ Add your first child</button></div>`;
+    return `<div class="bar"><h1>⭐ Good Points</h1>${lockBtn()}<button class="icon-btn" data-a="settings" title="Settings" aria-label="Settings">⚙️</button></div>${body}`;
+  }
+
+  function viewKid(kid, tab) {
+    const bal = balance(kid.id), wk = earned(kid.id, startOfWeek());
+    const rewards = [...S.rewards].sort((a, b) => a.cost - b.cost);
+    const next = rewards.find(r => r.cost > bal);
+    const canGet = rewards.filter(r => r.cost <= bal).length;
+    let goal = '';
+    if (rewards.length) {
+      if (next) {
+        const pct = Math.max(0, Math.min(100, (bal / next.cost) * 100));
+        goal = `<div class="goal"><div class="lbl">${canGet ? `🎉 Can get <b>${canGet}</b> reward${canGet > 1 ? 's' : ''} now · ` : ''}<b>${next.cost - Math.max(0, bal)}</b> more for ${next.emoji} <b>${esc(next.label)}</b></div><div class="track"><div class="fill" style="width:${pct}%"></div></div></div>`;
+      } else {
+        goal = `<div class="goal"><div class="lbl">🎉 Enough points for <b>every</b> reward!</div><div class="track"><div class="fill" style="width:100%"></div></div></div>`;
+      }
+    }
+    const hero = `<div class="hero" style="--kc:${kid.color}">
+      <div class="av">${kid.avatar}</div>
+      <div class="info">
+        <div class="nm">${esc(kid.name)}</div>
+        <div class="pts ${bal < 0 ? 'neg' : ''}">${bal} <small>points</small></div>
+        <div class="week"><span class="chip g">This week +${wk.plus}</span><span class="chip b">${wk.minus || '−0'}</span></div>
+      </div>${goal}</div>`;
+
+    const tabs = `<div class="tabs" role="tablist">
+      ${[['earn','⭐ Points'],['rewards','🎁 Rewards'],['history','📜 History']].map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" class="${tab === k ? 'on' : ''}" data-a="tab" data-tab="${k}">${l}</button>`).join('')}
+    </div>`;
+
+    let body = '';
+    if (tab === 'earn') {
+      const good = S.behaviors.filter(b => b.points > 0), bad = S.behaviors.filter(b => b.points < 0);
+      const btn = b => `<button class="act ${b.points > 0 ? 'good' : 'bad'}" data-a="beh" data-id="${b.id}"><span class="em">${esc(b.emoji)}</span><span class="lb">${esc(b.label)}</span><span class="pv">${sign(b.points)}</span></button>`;
+      body = `<h3 class="sec">👍 Good things</h3><div class="acts">${good.map(btn).join('')}
+          <button class="act custom" data-a="custom"><span class="em">✏️</span><span class="lb">Something else</span><span class="pv">± custom</span></button></div>
+        <h3 class="sec">👎 Oops</h3><div class="acts">${bad.map(btn).join('') || '<p class="muted">No oops behaviors set up.</p>'}</div>`;
+    } else if (tab === 'rewards') {
+      body = rewards.length ? `<div class="list">${rewards.map(r => {
+        const ok = bal >= r.cost;
+        return `<div class="row"><div class="em">${esc(r.emoji)}</div><div class="tx"><b>${esc(r.label)}</b><small>${ok ? 'Ready to redeem!' : `Needs ${r.cost - Math.max(0, bal)} more points`}</small></div>
+          <div class="v r">${r.cost}</div><button class="btn sm ${ok ? 'good' : ''}" data-a="redeem" data-id="${r.id}" ${ok ? '' : 'disabled'}>Redeem</button></div>`;
+      }).join('')}</div>` : `<div class="empty"><p>No rewards yet. Add some in ⚙️ Settings.</p></div>`;
+    } else {
+      const items = S.log.filter(e => e.kidId === kid.id).sort((a, b) => b.ts - a.ts).slice(0, 300);
+      if (!items.length) body = `<div class="empty"><div class="big">📜</div><p>Nothing here yet. Give ${esc(kid.name)} some points!</p></div>`;
+      else {
+        const today = startOfDay(), yest = today - 864e5;
+        let last = null, out = '';
+        for (const e of items) {
+          const d = startOfDay(new Date(e.ts));
+          if (d !== last) {
+            last = d;
+            const lbl = d === today ? 'Today' : d === yest ? 'Yesterday' : new Date(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+            out += `<div class="day">${lbl}</div>`;
+          }
+          const cls = e.type === 'reward' ? 'r' : e.points > 0 ? 'g' : 'b';
+          const time = new Date(e.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+          out += `<div class="row"><div class="em">${esc(e.emoji)}</div><div class="tx"><b>${e.type === 'reward' ? 'Redeemed: ' : ''}${esc(e.label)}</b><small>${time}${e.note ? ' · ' + esc(e.note) : ''}</small></div>
+            <div class="v ${cls}">${sign(e.points)}</div><button class="x" data-a="del-log" data-id="${e.id}" title="Remove" aria-label="Remove entry">✕</button></div>`;
+        }
+        body = `<div class="list">${out}</div>`;
+      }
+    }
+
+    return `<div class="bar"><button class="icon-btn" data-a="home" aria-label="Back">←</button><div class="title"></div>${lockBtn()}
+      <button class="icon-btn" data-a="edit-kid" data-id="${kid.id}" title="Edit ${esc(kid.name)}" aria-label="Edit child">✏️</button></div>
+      ${hero}${tabs}${body}`;
+  }
+
+  function viewSettings() {
+    const good = S.behaviors.filter(b => b.points > 0), bad = S.behaviors.filter(b => b.points < 0);
+    const behRow = b => `<div class="srow"><div class="em">${esc(b.emoji)}</div><div class="tx">${esc(b.label)}</div><div class="v ${b.points > 0 ? 'g' : 'b'}">${sign(b.points)}</div><button class="btn sm ghost" data-a="edit-beh" data-id="${b.id}">Edit</button></div>`;
+    return `<div class="bar"><button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>⚙️ Settings</h1>${lockBtn()}</div>
+      <div class="card"><h2>👧 Children</h2>
+        ${S.kids.map(k => `<div class="srow"><div class="em">${k.avatar}</div><div class="tx">${esc(k.name)}</div><div class="v">${balance(k.id)} pts</div><button class="btn sm ghost" data-a="edit-kid" data-id="${k.id}">Edit</button></div>`).join('') || '<p class="help">No children yet.</p>'}
+        <div class="btns"><button class="btn sm" data-a="add-kid">➕ Add child</button></div></div>
+      <div class="card"><h2>👍 Good behaviors</h2><p class="help">These earn points. Change the points to match what matters in your family.</p>
+        ${good.map(behRow).join('')}<div class="btns"><button class="btn sm" data-a="add-beh" data-kind="good">➕ Add good behavior</button></div></div>
+      <div class="card"><h2>👎 Oops behaviors</h2><p class="help">These take points away.</p>
+        ${bad.map(behRow).join('')}<div class="btns"><button class="btn sm" data-a="add-beh" data-kind="bad">➕ Add oops behavior</button></div></div>
+      <div class="card"><h2>🎁 Rewards</h2><p class="help">What kids can trade their points for.</p>
+        ${[...S.rewards].sort((a, b) => a.cost - b.cost).map(r => `<div class="srow"><div class="em">${esc(r.emoji)}</div><div class="tx">${esc(r.label)}</div><div class="v">${r.cost} pts</div><button class="btn sm ghost" data-a="edit-rw" data-id="${r.id}">Edit</button></div>`).join('') || '<p class="help">No rewards yet.</p>'}
+        <div class="btns"><button class="btn sm" data-a="add-rw">➕ Add reward</button></div></div>
+      <div class="card"><h2>🔒 Parent PIN</h2><p class="help">${S.settings.pin ? 'A PIN is set. Kids can look, but changes need the PIN.' : 'No PIN set. Anyone using this device can change points.'}</p>
+        <div class="btns"><button class="btn sm" data-a="pin">${S.settings.pin ? 'Change or remove PIN' : 'Set a PIN'}</button></div></div>
+      <div class="card"><h2>💾 Backup</h2><p class="help">Points are saved on this device only. Download a backup to move to a new phone or keep data safe.</p>
+        <div class="btns"><button class="btn sm ghost" data-a="export">⬇️ Download backup</button><button class="btn sm ghost" data-a="import">⬆️ Restore backup</button></div></div>
+      <div class="card"><h2>🧹 Start over</h2><p class="help">Erase points history but keep children, behaviors and rewards, or erase everything.</p>
+        <div class="btns"><button class="btn sm ghost" data-a="reset-points">Reset all points</button><button class="btn sm danger" data-a="reset-all">Erase everything</button></div></div>`;
+  }
+
+  function render() {
+    const r = route();
+    if (r.view === 'settings' && !isUnlocked()) { location.replace('#/'); requireParent(() => location.hash = '#/settings'); return; }
+    app.innerHTML = r.view === 'kid' ? viewKid(r.kid, r.tab) : r.view === 'settings' ? viewSettings() : viewHome();
+    document.title = r.view === 'kid' ? `${r.kid.name} · Good Points` : 'Good Points';
+  }
+
+  // ---------- events ----------
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-a]'); if (!t || modal.contains(t)) return;
+    const a = t.dataset.a, id = t.dataset.id, r = route(), kid = r.kid;
+    switch (a) {
+      case 'home': location.hash = '#/'; break;
+      case 'open': location.hash = `#/kid/${id}`; break;
+      case 'tab': location.replace(`#/kid/${kid.id}/${t.dataset.tab}`); break;
+      case 'settings': requireParent(() => location.hash = '#/settings'); break;
+      case 'lock': unlockedUntil = 0; if (r.view === 'settings') location.replace('#/'); else render(); toast('Locked. Kids can look but not change points.'); break;
+      case 'unlock': requireParent(() => {}); break;
+      case 'add-kid': requireParent(() => kidForm()); break;
+      case 'edit-kid': requireParent(() => kidForm(kidById(id))); break;
+      case 'beh': { const b = S.behaviors.find(x => x.id === id); if (b) requireParent(() => addEntry(kid, 'behavior', b.label, b.emoji, b.points)); break; }
+      case 'custom': requireParent(() => customPoints(kid)); break;
+      case 'redeem': {
+        const rw = S.rewards.find(x => x.id === id); if (!rw) break;
+        requireParent(() => confirmBox(`Redeem ${esc(rw.emoji)} ${esc(rw.label)}?`, `This uses <b>${rw.cost}</b> of ${esc(kid.name)}'s ${balance(kid.id)} points.`, 'Redeem 🎉', false,
+          () => addEntry(kid, 'reward', rw.label, rw.emoji, -rw.cost)));
+        break;
+      }
+      case 'del-log': requireParent(() => {
+        const e = S.log.find(x => x.id === id); if (!e) return;
+        S.log = S.log.filter(x => x.id !== id); save(); render();
+        toast('Entry removed', () => { S.log.push(e); save(); render(); });
+      }); break;
+      case 'add-beh': behaviorForm(null, t.dataset.kind); break;
+      case 'edit-beh': behaviorForm(S.behaviors.find(x => x.id === id)); break;
+      case 'add-rw': rewardForm(); break;
+      case 'edit-rw': rewardForm(S.rewards.find(x => x.id === id)); break;
+      case 'pin': pinForm(); break;
+      case 'export': exportData(); break;
+      case 'import': importData(); break;
+      case 'reset-points': confirmBox('Reset all points?', 'Every child goes back to 0 points and history is cleared. Children, behaviors and rewards stay.', 'Reset points', true, () => { S.log = []; save(); render(); toast('All points reset'); }); break;
+      case 'reset-all': confirmBox('Erase everything?', 'This deletes all children, points, behaviors, rewards and your PIN on this device. Download a backup first if you might want it.', 'Erase everything', true, () => { S = defaults(); unlockedUntil = 0; save(); location.hash = '#/'; render(); }); break;
+    }
+  });
+
+  window.addEventListener('hashchange', () => { closeModal(); render(); window.scrollTo(0, 0); });
+  render();
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
