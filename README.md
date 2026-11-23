@@ -19,3 +19,7 @@ Risk Assessments, Network Security, Endpoint security,
 stats.vercel.app/api?username=KwameKyei&amp;show_icons=true&amp;theme=radical)
 ### ✨ Fun Fact
 I&#39;m on a (Reading).
+
+## Waybill Logger
+
+[`waybill-logger/`](waybill-logger/) is a local web app (Node.js) that turns photos of SORL waybills into rows for the daily loading spreadsheet. See its README for the Windows setup steps.

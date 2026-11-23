@@ -1,0 +1,28 @@
+{
+  "is_sorl_waybill": true,
+  "waybill_no": "SORL00061970",
+  "date": "22/11/2026",
+  "date_iso": "2026-11-22",
+  "truck_number": "GT 4521-19",
+  "customer_order_number": null,
+  "product_name": "PREMIUM/GASOLINE",
+  "transporter": "NORTHERN HAULAGE LTD",
+  "supplier": "NEWCO ENERGY GHANA LIMITED",
+  "customer": "SAGE DISTRIBUTION LIMITED",
+  "driver": null,
+  "destinations": ["TAMALE", "BOLGATANGA"],
+  "loading_start": "22/11/2026 17:40",
+  "loading_end": null,
+  "order_qty_20c": 45000,
+  "loaded_gross": 45100,
+  "compartments": [
+    { "number": "1", "ordered": 15000, "actual_load": 15020, "temperature": 30.1 },
+    { "number": "2", "ordered": 15000, "actual_load": 15030, "temperature": 30.0 },
+    { "number": "3", "ordered": 15000, "actual_load": 14990, "temperature": 30.2 }
+  ],
+  "average_temperature": 30.1,
+  "density": 0.7421,
+  "unreadable_fields": ["customer_order_number", "driver", "loading_end"],
+  "uncertain_fields": ["truck_number"],
+  "notes": "Two destinations listed; pen mark over the order number."
+}
