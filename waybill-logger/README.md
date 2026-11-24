@@ -134,7 +134,7 @@ Each photo costs money on your Anthropic account. With the default settings (Cla
 
 A failed check is a good signal but not a guarantee: a cheap model can misread a truck or order number and still pass every check. That is why you should compare first.
 
-**Compare settings on your own photos.** Put 20 or so waybill photos that are already typed into your spreadsheet in a folder, then run:
+**Compare settings on your own photos.** Use 20 or so photos that are already typed into your spreadsheet. The photos the app has already read are kept in `data\images`, so you can point at that folder with `--limit 20`, or put your own photos in a folder. Then run:
 
 ```bat
 npm run compare -- --photos C:\WaybillPhotos --truth "C:\path\to\LOADING.xlsx"

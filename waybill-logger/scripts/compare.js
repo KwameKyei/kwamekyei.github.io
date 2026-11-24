@@ -88,7 +88,8 @@ function matchTruth(truth, cells) {
 
 const truth = await loadTruth(truthFile);
 const settings = await getSettings();
-let files = (await fs.readdir(photosDir)).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).sort();
+// .img = photos the app already saved in data\images (type is detected from the bytes).
+let files = (await fs.readdir(photosDir)).filter((f) => /\.(jpe?g|png|webp|img)$/i.test(f)).sort();
 if (limit) files = files.slice(0, limit);
 console.log(`${files.length} photo(s), ${truth.length} answer-key rows, ${configs.length} config(s): ${configs.join(' | ')}\n`);
 
