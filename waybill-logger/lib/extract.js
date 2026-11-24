@@ -3,11 +3,21 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildRow, validateRow, countWaybills } from '../public/shared.js';
+import { estimateCost } from './usage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// First pass. Every photo is read with this model and effort.
 export const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 export const EFFORT = process.env.CLAUDE_EFFORT || 'high';
+// Optional second pass: when set, a photo whose first reading fails any check (unreadable or
+// uncertain fields, totals that don't add up, odd waybill number...) is read again with this model.
+export const ESCALATE_MODEL = process.env.CLAUDE_ESCALATE_MODEL || '';
+export const ESCALATE_EFFORT = process.env.CLAUDE_ESCALATE_EFFORT || 'high';
+
+// Models that accept the server-side refusal fallback parameter. Others are called without it.
+const FALLBACK_MODELS = ['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-fable-5-2'];
 
 // Structured outputs allow at most 16 union-typed (nullable) fields per schema, so text fields
 // use "" for "unreadable / not present" and only the numbers are nullable (7 unions in total).
@@ -114,23 +124,14 @@ async function mockExtraction() {
   return JSON.parse(await fs.readFile(file, 'utf8'));
 }
 
-/**
- * @param {Buffer} imageBuffer JPEG/PNG/WebP bytes
- * @param {string} mediaType e.g. image/jpeg
- */
-export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg') {
-  if (process.env.MOCK_EXTRACTION === '1') {
-    return { extraction: await mockExtraction(), model: 'mock', usage: null };
-  }
-
-  const response = await getClient().beta.messages.create({
-    model: MODEL,
+/** One model call: returns { extraction, model, usage }. */
+export async function readWithModel(imageBuffer, mediaType, { model, effort }) {
+  const params = {
+    model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
     system: SYSTEM_PROMPT,
     output_config: {
-      effort: EFFORT,
+      effort,
       format: { type: 'json_schema', schema: WAYBILL_SCHEMA },
     },
     messages: [
@@ -142,22 +143,97 @@ export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg') {
         ],
       },
     ],
-  });
+  };
+  const response = FALLBACK_MODELS.includes(model)
+    ? await getClient().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+    : await getClient().messages.create(params);
 
   if (response.stop_reason === 'refusal') {
-    throw Object.assign(new Error('The model declined to read this image.'), { status: 422 });
+    throw Object.assign(new Error('The model declined to read this image.'), { status: 422, usage: response.usage, model: response.model });
   }
   if (response.stop_reason === 'max_tokens') {
-    throw Object.assign(new Error('The response was cut off. Try re-running this image.'), { status: 502 });
+    throw Object.assign(new Error('The response was cut off. Try re-running this image.'), { status: 502, usage: response.usage, model: response.model });
   }
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   let extraction;
   try {
     extraction = JSON.parse(text);
   } catch {
-    throw Object.assign(new Error('The model did not return valid JSON. Try re-running this image.'), { status: 502 });
+    throw Object.assign(new Error('The model did not return valid JSON. Try re-running this image.'), { status: 502, usage: response.usage, model: response.model });
   }
   return { extraction, model: response.model, usage: response.usage };
+}
+
+const KEY_CELLS = ['date', 'truck', 'orderNo', 'waybill', 'product', 'transporter', 'bdc', 'omc', 'ordered', 'loaded'];
+
+/** Why a reading should be checked by the stronger model (empty list = it passed every check). */
+export function escalationReasons(x) {
+  const reasons = [];
+  if (!x || typeof x !== 'object') return ['no reading'];
+  if (x.is_sorl_waybill === false) reasons.push('not a SORL waybill');
+  if (x.unreadable_fields?.length) reasons.push(`unreadable: ${x.unreadable_fields.join(', ')}`);
+  if (x.uncertain_fields?.length) reasons.push(`uncertain: ${x.uncertain_fields.join(', ')}`);
+  // Mapping tables don't matter here: an unknown company name is not a reading problem.
+  const { cells } = buildRow(x, { products: {}, companies: {} });
+  const blank = KEY_CELLS.filter((k) => cells[k] === '' || cells[k] === null);
+  if (blank.length) reasons.push(`blank: ${blank.join(', ')}`);
+  for (const i of validateRow(x, cells, { sessionWaybills: countWaybills([cells]) })) reasons.push(i.msg);
+  return reasons;
+}
+
+/**
+ * Read a waybill: first pass with MODEL/EFFORT, then (if ESCALATE_MODEL is set and the first
+ * reading fails a check) a second pass with ESCALATE_MODEL/ESCALATE_EFFORT.
+ * Returns { extraction, model, usage, cost, passes: [{ stage, model, effort, usage, cost, reasons }] }.
+ * onPass(pass) is called for every model call, including failed ones, so cost can be logged.
+ */
+export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg', {
+  onPass, model = MODEL, effort = EFFORT, escalateModel = ESCALATE_MODEL, escalateEffort = ESCALATE_EFFORT,
+  reader = readWithModel, // tests pass a stand-in here
+} = {}) {
+  if (process.env.MOCK_EXTRACTION === '1' && reader === readWithModel) {
+    return { extraction: await mockExtraction(), model: 'mock', usage: null, cost: 0, passes: [] };
+  }
+  const passes = [];
+  const run = async (stage, model, effort) => {
+    try {
+      const r = await reader(imageBuffer, mediaType, { model, effort });
+      const pass = { stage, model: r.model, effort, usage: r.usage, cost: estimateCost(r.model, r.usage) };
+      passes.push(pass);
+      await onPass?.(pass);
+      return r;
+    } catch (err) {
+      if (err.usage) {
+        const pass = { stage, model: err.model || model, effort, usage: err.usage, cost: estimateCost(err.model || model, err.usage), error: err.message };
+        passes.push(pass);
+        await onPass?.(pass);
+      }
+      throw err;
+    }
+  };
+
+  let first;
+  try {
+    first = await run('first', model, effort);
+  } catch (err) {
+    // A failed cheap pass (refusal, cut off, bad JSON) goes straight to the stronger model.
+    if (!escalateModel) throw err;
+  }
+  let result = first;
+  if (escalateModel) {
+    const reasons = first ? escalationReasons(first.extraction) : ['first pass failed'];
+    if (passes.length) passes[passes.length - 1].reasons = reasons;
+    if (reasons.length) result = await run('escalation', escalateModel, escalateEffort);
+  }
+  const total = (k) => passes.reduce((n, p) => n + (p.usage?.[k] || 0), 0);
+  const costs = passes.map((p) => p.cost);
+  return {
+    extraction: result.extraction,
+    model: result.model,
+    usage: { input_tokens: total('input_tokens'), output_tokens: total('output_tokens') },
+    cost: costs.some((c) => c === null) ? null : costs.reduce((a, b) => a + b, 0),
+    passes,
+  };
 }
 
 /** Turn SDK errors into a short message for the UI. */

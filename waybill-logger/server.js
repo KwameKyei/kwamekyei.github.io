@@ -7,11 +7,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractWaybill, describeError, MODEL, EFFORT } from './lib/extract.js';
+import { extractWaybill, describeError, MODEL, EFFORT, ESCALATE_MODEL, ESCALATE_EFFORT } from './lib/extract.js';
 import {
   ensureDirs, getSettings, saveSettings, getHistory, saveHistory, listHistoryDays,
-  imagePath, detectMediaType,
+  imagePath, detectMediaType, DATA_DIR,
 } from './lib/store.js';
+import { logUsage, usageSummary } from './lib/usage.js';
 import { inspectWorkbook, appendToWorkbook, exportWorkbook } from './lib/workbook.js';
 import { createAuth } from './lib/auth.js';
 
@@ -47,14 +48,41 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 // Claude accepts images up to 5 MB (base64). The browser downsizes photos first, so this is a backstop.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-async function runExtraction(id, buf, res) {
+// Same photo uploaded again (same bytes, same model settings) -> reuse the earlier reading for free.
+const CACHE_DIR = path.join(DATA_DIR, 'cache');
+const CONFIG_KEY = `${MODEL}:${EFFORT}>${ESCALATE_MODEL || '-'}:${ESCALATE_EFFORT}`;
+const cacheFile = (buf) => path.join(CACHE_DIR, `${crypto.createHash('sha256').update(buf).digest('hex')}.json`);
+
+async function readCache(buf) {
+  try {
+    const c = JSON.parse(await fs.readFile(cacheFile(buf), 'utf8'));
+    return c.config === CONFIG_KEY && process.env.MOCK_EXTRACTION !== '1' ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runExtraction(id, buf, res, { useCache = true } = {}) {
   const mediaType = detectMediaType(buf);
   if (!mediaType) return res.status(400).json({ error: 'Unsupported image type. Use JPEG, PNG or WebP.' });
   if (buf.length > MAX_IMAGE_BYTES) return res.status(413).json({ error: 'Image is larger than 5 MB.' });
   const started = Date.now();
+  if (useCache) {
+    const hit = await readCache(buf);
+    if (hit) {
+      await logUsage({ id, cached: true, model: hit.model, cost: 0 });
+      return res.json({ id, extraction: hit.extraction, model: hit.model, cached: true, cost: 0, ms: Date.now() - started, imageUrl: `/api/images/${id}` });
+    }
+  }
   try {
-    const { extraction, model, usage } = await extractWaybill(buf, mediaType);
-    res.json({ id, extraction, model, usage, ms: Date.now() - started, imageUrl: `/api/images/${id}` });
+    const onPass = (p) => logUsage({ id, stage: p.stage, model: p.model, effort: p.effort, usage: p.usage, cost: p.cost, reasons: p.reasons, error: p.error });
+    const { extraction, model, usage, cost, passes } = await extractWaybill(buf, mediaType, { onPass });
+    if (process.env.MOCK_EXTRACTION !== '1') {
+      await fs.mkdir(CACHE_DIR, { recursive: true });
+      await fs.writeFile(cacheFile(buf), JSON.stringify({ config: CONFIG_KEY, model, extraction, savedAt: new Date().toISOString() }));
+    }
+    const escalated = passes.some((p) => p.stage === 'escalation');
+    res.json({ id, extraction, model, usage, cost, escalated, ms: Date.now() - started, imageUrl: `/api/images/${id}` });
   } catch (err) {
     const { status, message } = describeError(err);
     console.error(`[extract ${id}]`, message);
@@ -67,6 +95,8 @@ app.get('/api/health', (req, res) => {
     ok: true,
     model: MODEL,
     effort: EFFORT,
+    escalateModel: ESCALATE_MODEL,
+    escalateEffort: ESCALATE_EFFORT,
     hasKey: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     mock: process.env.MOCK_EXTRACTION === '1',
     pin: auth.required,
@@ -89,8 +119,10 @@ app.post('/api/extract/:id/rerun', wrap(async (req, res) => {
   } catch {
     return res.status(404).json({ error: 'The stored image for this row was not found. Upload it again.' });
   }
-  await runExtraction(req.params.id, buf, res);
+  await runExtraction(req.params.id, buf, res, { useCache: false });
 }));
+
+app.get('/api/usage', wrap(async (req, res) => res.json(await usageSummary(req.query.day || undefined))));
 
 app.get('/api/images/:id', wrap(async (req, res) => {
   let buf;
@@ -165,5 +197,5 @@ const server = app.listen(PORT, HOST, () => {
   if (process.env.MOCK_EXTRACTION === '1') console.log('  MOCK_EXTRACTION=1: images are NOT sent to Claude; sample data is returned.');
   else if (!process.env.ANTHROPIC_API_KEY) console.log('  WARNING: ANTHROPIC_API_KEY is not set. Add it to .env');
   console.log(`  PIN: ${auth.required ? 'required' : 'off (set ACCESS_PIN in .env to require one)'}`);
-  console.log(`  Model: ${MODEL} (effort ${EFFORT})\n`);
+  console.log(`  Model: ${MODEL} (effort ${EFFORT})${ESCALATE_MODEL ? `, re-checks with ${ESCALATE_MODEL} (effort ${ESCALATE_EFFORT})` : ''}\n`);
 });

@@ -115,6 +115,38 @@ Notes for the hosted version:
 
 Each day's rows (including your edits and the photos) are saved on the PC automatically. Reopen any day from **History**, or pick the date.
 
+## Keeping API costs down
+
+Each photo costs money on your Anthropic account. With the default settings (Claude Opus 5.5, effort `high`), most of the cost is the model's thinking before it answers. The photo itself is a smaller part.
+
+**See what you spend.** The summary bar shows **API today ≈ $…**, with the number of photos and the average cost per photo. Every call is logged in `data/usage/<day>.jsonl`. These are estimates from token counts at the prices in `lib/usage.js`. Your Anthropic bill is the final figure.
+
+**Free savings (already on):**
+- Uploading the same photo again reuses the earlier reading at no cost. Only **↻** pays for a fresh reading.
+- Set a monthly spend limit in the Anthropic Console (Settings → Limits) so a busy day can't run away.
+
+**Cheaper settings (test them first).** These trade some reading care for cost, so measure them on your own photos before switching:
+
+| Setting in `.env` | What it does |
+|---|---|
+| `CLAUDE_EFFORT=medium` or `low` | Same model, less thinking. Cheaper and faster. |
+| `CLAUDE_MODEL=claude-haiku-5-5`, `CLAUDE_EFFORT=medium`, `CLAUDE_ESCALATE_MODEL=claude-opus-5-5`, `CLAUDE_ESCALATE_EFFORT=high` | Every photo is read by the much cheaper Haiku 5.5. Only photos whose reading fails a check (unreadable or uncertain fields, totals that don't add up, odd waybill number, blank key fields) are read again by Opus 5.5. The summary bar shows how many were re-checked. |
+
+A failed check is a good signal but not a guarantee: a cheap model can misread a truck or order number and still pass every check. That is why you should compare first.
+
+**Compare settings on your own photos.** Put 20 or so waybill photos that are already typed into your spreadsheet in a folder, then run:
+
+```bat
+npm run compare -- --photos C:\WaybillPhotos --truth "C:\path\to\LOADING.xlsx"
+```
+
+By default this tries three settings: Opus `high` (today's), Opus `low`, and Haiku first with Opus re-checks. Use `--configs "model:effort,..."` to choose others. For each setting it prints:
+- field accuracy;
+- **silent errors**: wrong values that were *not* highlighted, the ones that would slip into your sheet;
+- cost per photo.
+
+Every wrong field is listed in `compare-results.csv`. The test itself costs money, roughly what those photos cost today times the number of settings. Pick the cheapest setting with no silent errors.
+
 ## Checks
 
 - The sum of compartment **actual loads** must equal **LOADED GROSS**, and the sum of compartment **ordered** quantities must equal **Order Quantity@20°C**. Compartments showing 0 are empty trailer compartments and are ignored. If any compartment value is unreadable, the total is not checked and you get a warning.
@@ -155,6 +187,8 @@ Matching ignores letter case, extra spaces and punctuation, but otherwise must b
 | `PORT` | `3000` | Port number |
 | `HOST` | `0.0.0.0` | Use `127.0.0.1` to block other devices |
 | `DATA_DIR` | `./data` | Where settings, history and photos are stored |
+| `CLAUDE_ESCALATE_MODEL` | (off) | Re-read photos that fail a check with this model (see "Keeping API costs down") |
+| `CLAUDE_ESCALATE_EFFORT` | `high` | Effort for the re-check |
 | `ACCESS_PIN` | (off) | PIN required on every device. Required on Render. |
 | `SESSION_SECRET` | (random) | Signs the login cookie. If unset, a restart signs devices out. |
 | `MOCK_EXTRACTION` | (off) | `1` = demo mode with no API calls |
@@ -168,6 +202,8 @@ data/
   settings.json          mapping tables
   history/2026-11-23.json one file per day: rows, edits, start number
   images/<id>.img        downsized photos (used for re-run and review)
+  usage/2026-11-23.jsonl  one line per API call: model, tokens, estimated cost
+  cache/<hash>.json       earlier readings, so the same photo is never paid for twice
 ```
 
 Back up the `data` folder to keep your history and mappings. Delete old files in `data/images` to free space.
@@ -182,6 +218,7 @@ The automated sample cases (`test/`) cover:
 
 - `shared.test.js`: a clean waybill to the exact 12 copied columns (including the TSV line); an empty compartment being ignored; unreadable fields left blank and highlighted; an unknown company shown in full, then mapped once a short name is saved; a compartment total mismatch; a wrong-day warning; multiple destinations in NOTES; duplicates in the batch and in the workbook; user edits overriding values; no totals check when a compartment is unreadable; sorting; and date formats.
 - `workbook.test.js`: header and last-row detection, appending below the last row, keeping fonts, borders and number formats, copying a formula column down, and the new-file export.
+- `cost.test.js`: which readings get re-checked, the two-pass flow (a clean cheap reading is kept, a doubtful one is re-read), cost estimates, and the daily spend totals.
 - `auth.test.js`: the API is locked without the PIN, the right PIN unlocks it, forged cookies are rejected, wrong PINs are throttled, and the server refuses to start on Render without a PIN.
 - `server.test.js`: starts the server in demo mode and exercises upload, re-run, image serving, rejecting a non-image, settings and history.
 
@@ -203,7 +240,8 @@ lib/store.js         Settings, history and photo files
 lib/auth.js          Optional PIN login
 public/              Web app (index.html, app.js, style.css)
 public/shared.js     Mapping, validation and TSV (shared with the tests)
-scripts/             demo.js, try-image.js
+scripts/             demo.js, try-image.js, compare.js (cost/accuracy comparison)
+lib/usage.js         Cost estimates and the daily usage log
 test/                Automated tests and sample fixtures
 start.bat            Windows launcher
 ../render.yaml       Render Blueprint (at the repository root)

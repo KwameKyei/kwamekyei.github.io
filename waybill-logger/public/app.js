@@ -190,6 +190,8 @@ async function runJob({ row, file, rerun }) {
     if (!res.ok) throw new Error(res.body.error || 'Extraction failed');
     row.extraction = res.body.extraction;
     row.model = res.body.model;
+    row.cost = res.body.cost;
+    row.escalated = !!res.body.escalated;
     row.status = 'done';
     row.error = '';
   } catch (e) {
@@ -198,7 +200,21 @@ async function runJob({ row, file, rerun }) {
   }
   render();
   scheduleSave();
+  refreshUsage();
 }
+
+// ---------- API spend ----------
+let usageTimer;
+function refreshUsage() {
+  clearTimeout(usageTimer);
+  usageTimer = setTimeout(async () => {
+    try {
+      state.usage = await (await api('/api/usage')).json();
+      render();
+    } catch { /* not important */ }
+  }, 300);
+}
+const money = (n) => `$${(n || 0).toFixed(n >= 1 ? 2 : 3)}`;
 
 function rerunRow(id) {
   const row = state.rows.find((r) => r.id === id);
@@ -336,6 +352,9 @@ function render() {
     errors ? `<span class="chip bad">${errors} need attention</span>` : '',
     warns ? `<span class="chip warn">${warns} with warnings</span>` : '',
     `<span class="chip">Loaded total ${fmtNum(loaded)} L</span>`,
+    state.usage && state.usage.calls
+      ? `<span class="chip" title="Estimated from token counts; your Anthropic bill is the final figure.">API today ≈ ${money(state.usage.cost)} · ${state.usage.waybills} photo(s) · ${money(state.usage.costPerWaybill)} each${state.usage.escalations ? ` · ${state.usage.escalations} re-checked` : ''}</span>`
+      : '',
   ].join('');
 }
 
@@ -573,10 +592,10 @@ function scheduleSave() {
   saveTimer = setTimeout(saveHistoryNow, 800);
 }
 function historyPayload() {
-  const rows = state.rows.map(({ id, fileName, status, error, extraction, edits, imageUrl, appended, model }) => ({
+  const rows = state.rows.map(({ id, fileName, status, error, extraction, edits, imageUrl, appended, model, cost, escalated }) => ({
     id, fileName, status: ['done', 'error'].includes(status) ? status : 'error',
     error: ['done', 'error'].includes(status) ? error : 'Interrupted. Press ↻ to re-run.',
-    extraction, edits, imageUrl, appended, model,
+    extraction, edits, imageUrl, appended, model, cost, escalated,
   }));
   return JSON.stringify({ startNo: state.startNo, rows });
 }
@@ -731,10 +750,11 @@ window.addEventListener('beforeunload', (e) => {
   renderSettings();
   try {
     const h = await (await api('/api/health')).json();
-    $('#serverInfo').textContent = `Model: ${h.model} · effort: ${h.effort} · API key: ${h.hasKey ? 'set' : 'MISSING'}${h.mock ? ' · MOCK MODE (sample data, no API calls)' : ''}`;
+    $('#serverInfo').textContent = `Model: ${h.model} · effort: ${h.effort}${h.escalateModel ? ` · re-check failed readings with ${h.escalateModel} (${h.escalateEffort})` : ''} · API key: ${h.hasKey ? 'set' : 'MISSING'}${h.mock ? ' · MOCK MODE (sample data, no API calls)' : ''}`;
     const w = $('#keyWarning');
     if (h.mock) { w.hidden = false; w.textContent = 'Mock mode is on: photos are not read, each image returns one of two sample waybills.'; }
     else if (!h.hasKey) { w.hidden = false; w.textContent = 'The Claude API key is missing. Add ANTHROPIC_API_KEY to the .env file and restart the server.'; }
   } catch { /* ignore */ }
   await loadDay(state.day);
+  refreshUsage();
 })();
