@@ -9,10 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 export const EFFORT = process.env.CLAUDE_EFFORT || 'high';
 
-const str = { type: ['string', 'null'] };
+// Structured outputs allow at most 16 union-typed (nullable) fields per schema, so text fields
+// use "" for "unreadable / not present" and only the numbers are nullable (7 unions in total).
+const str = { type: 'string' };
 const numOrNull = { type: ['number', 'null'] };
 
-// JSON schema enforced by structured outputs. Every field is required; unreadable values are null.
+// JSON schema enforced by structured outputs. Every field is required; unreadable text is "" and
+// unreadable numbers are null.
 export const WAYBILL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -67,7 +70,7 @@ The photos are taken on a phone at a loading depot. Expect tilt, shadows, glare,
 
 Field guide (use the label printed on the waybill):
 - waybill_no: the waybill number, normally "SORL" followed by 8 digits, e.g. "SORL00061973". Copy every digit including leading zeros.
-- date: the DATE printed on the waybill, exactly as printed. date_iso: the same date as YYYY-MM-DD (day comes before month on these waybills). null if any part is unreadable.
+- date: the DATE printed on the waybill, exactly as printed. date_iso: the same date as YYYY-MM-DD (day comes before month on these waybills). Empty string if any part is unreadable.
 - truck_number: the truck / vehicle number in the header, e.g. "GM131-25" or "GT 4521-19". Keep letters, digits and the hyphen as printed.
 - customer_order_number: the value labelled "Customer order Number".
 - product_name: the product description as printed, e.g. "GASOIL 50PPM", "PREMIUM/GASOLINE", "HEAVY FUEL OIL".
@@ -85,11 +88,11 @@ Field guide (use the label printed on the waybill):
 - is_sorl_waybill: false if the photo is not a SORL waybill.
 
 Rules:
-- Never guess. If a value is unreadable, cut off, covered by a pen mark, or you cannot tell it apart from ghost text, set it to null and add the field name to unreadable_fields. Do not fill a value from what it "should" be, and do not compute a total from the compartments.
+- Never guess. If a value is unreadable, cut off, covered by a pen mark, or you cannot tell it apart from ghost text, leave it empty (an empty string "" for text, null for a number) and add the field name to unreadable_fields. Do not fill a value from what it "should" be, and do not compute a total from the compartments.
 - If you can read a value but are not fully sure of a character or digit, give your best reading and add the field name to uncertain_fields.
 - Quantities are litres. Return numbers without thousands separators or units (e.g. 40000, not "40,000 L"). Use a decimal point for decimals.
 - Use the JSON field names exactly as given above in unreadable_fields and uncertain_fields.
-- notes: one short sentence about anything a reviewer should know (handwritten corrections, a value crossed out, a second page, multiple destinations). null if nothing.`;
+- notes: one short sentence about anything a reviewer should know (handwritten corrections, a value crossed out, a second page, multiple destinations). Empty string if nothing.`;
 
 let client;
 function getClient() {
