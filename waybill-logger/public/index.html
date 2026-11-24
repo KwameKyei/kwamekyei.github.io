@@ -92,7 +92,7 @@
 
       <div class="card history" id="historyCard">
         <h2>History</h2>
-        <p class="muted">Each day's rows are saved on this PC automatically. Pick a day to reopen it.</p>
+        <p class="muted">Each day's rows are saved on the server automatically. Pick a day to reopen it.</p>
         <div id="historyDays" class="history-days"></div>
       </div>
     </section>
@@ -125,9 +125,20 @@
       <div class="card">
         <h2>Server</h2>
         <p id="serverInfo" class="muted"></p>
+        <button class="btn" id="logoutBtn" hidden>🔒 Lock this device</button>
       </div>
     </section>
   </main>
+
+  <div id="pinOverlay" class="pin-overlay" hidden>
+    <form id="pinForm" class="card pin-card" autocomplete="off">
+      <h2>🔒 Waybill Logger</h2>
+      <p class="muted">Enter the PIN to continue.</p>
+      <input type="password" id="pinInput" inputmode="numeric" autocomplete="current-password" placeholder="PIN" required>
+      <p id="pinError" class="pin-error" role="alert"></p>
+      <button class="btn btn-primary btn-big" type="submit">Unlock</button>
+    </form>
+  </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

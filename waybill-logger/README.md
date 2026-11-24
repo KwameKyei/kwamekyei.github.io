@@ -45,7 +45,7 @@ Double-click `start.bat`.
 
 On a phone opened through the network address, the browser does not let pages write to the clipboard directly. "Copy rows" then shows the rows in a text box with the text selected. Use the phone's Copy command.
 
-> Anyone on the same network who can reach the PC can use the app, and through it your API key. Use it on a trusted network. To allow only the PC itself, set `HOST=127.0.0.1` in `.env`.
+> Without a PIN, anyone on the same network who can reach the PC can use the app, and through it your API key. Set `ACCESS_PIN` in `.env` to require a PIN on every device, or set `HOST=127.0.0.1` to allow only the PC itself.
 
 ### Command-line alternative
 
@@ -65,6 +65,38 @@ npm run demo
 ```
 
 Demo mode does not send anything to Claude. Each photo returns one of two sample waybills, so you can try the table, the highlights, mapping, copying and exporting.
+
+---
+
+## Host it online on Render (with a PIN)
+
+This gives you a permanent `https://…onrender.com` link that works from any phone or PC, with no PC left running. The repository root has a `render.yaml` Blueprint that sets everything up.
+
+**Cost:** saving settings, history and photos needs a persistent disk, and Render only offers disks on paid instances. The Blueprint uses the **Starter** instance with a 1 GB disk, about US$7–8 a month at the time of writing (check Render's pricing page). Claude API usage is billed separately by Anthropic.
+
+1. Sign up at <https://render.com> and connect your GitHub account.
+2. In the Render dashboard, choose **New → Blueprint** and pick the `kwamekyei.github.io` repository. Render reads `render.yaml` and shows a `waybill-logger` web service with a disk.
+3. Render asks for two values:
+   - `ANTHROPIC_API_KEY`: your Claude API key.
+   - `ACCESS_PIN`: the PIN everyone will type to open the app. Use at least 6 digits, and don't reuse a bank or phone PIN.
+4. Click **Apply**. The first build takes a few minutes. When it's live, your link is at the top of the service page, for example `https://waybill-logger.onrender.com` (Render may add a suffix if the name is taken).
+5. Open the link on your phone, enter the PIN, and add it to your home screen.
+
+How the PIN works:
+
+- Every API call (reading photos, settings, history, workbooks, images) needs the PIN. The PIN screen appears on first use, and each device stays signed in for 30 days.
+- After 5 wrong PINs from one device, that device has to wait 15 minutes. After 30 wrong PINs from all devices together, every login pauses for 15 minutes.
+- To change the PIN, edit `ACCESS_PIN` under the service's **Environment** tab in Render. Render redeploys, and every device must enter the new PIN.
+- **Settings → Lock this device** signs the current device out.
+- On Render the server refuses to start without `ACCESS_PIN`, so it can't go public unprotected by accident.
+
+Notes for the hosted version:
+
+- Render deploys again automatically every time `main` changes on GitHub.
+- The site uses HTTPS, so **Copy rows** writes to the phone's clipboard directly.
+- Your data lives on the Render disk (`/var/data`). Render takes daily disk snapshots. You can also download files with the service's **Shell** tab.
+- The workbook-append feature works the same: upload the workbook, and download the updated file.
+- To run it for free instead, change `plan: starter` to `plan: free` in `render.yaml` and delete the `disk:` block and the `DATA_DIR` entry. Be aware that free services sleep after 15 minutes idle (the first visit then takes about a minute), and **settings, history and photos are wiped on every restart or deploy**.
 
 ---
 
@@ -123,11 +155,13 @@ Matching ignores letter case, extra spaces and punctuation, but otherwise must b
 | `PORT` | `3000` | Port number |
 | `HOST` | `0.0.0.0` | Use `127.0.0.1` to block other devices |
 | `DATA_DIR` | `./data` | Where settings, history and photos are stored |
+| `ACCESS_PIN` | (off) | PIN required on every device. Required on Render. |
+| `SESSION_SECRET` | (random) | Signs the login cookie. If unset, a restart signs devices out. |
 | `MOCK_EXTRACTION` | (off) | `1` = demo mode with no API calls |
 
 Requests include Claude's server-side refusal fallback (`fallbacks: "default"`). If the main model declines an image, a fallback model reads it within the same call.
 
-## Data stored on the PC
+## Data stored on the PC (or the Render disk)
 
 ```
 data/
@@ -148,6 +182,7 @@ The automated sample cases (`test/`) cover:
 
 - `shared.test.js`: a clean waybill to the exact 12 copied columns (including the TSV line); an empty compartment being ignored; unreadable fields left blank and highlighted; an unknown company shown in full, then mapped once a short name is saved; a compartment total mismatch; a wrong-day warning; multiple destinations in NOTES; duplicates in the batch and in the workbook; user edits overriding values; no totals check when a compartment is unreadable; sorting; and date formats.
 - `workbook.test.js`: header and last-row detection, appending below the last row, keeping fonts, borders and number formats, copying a formula column down, and the new-file export.
+- `auth.test.js`: the API is locked without the PIN, the right PIN unlocks it, forged cookies are rejected, wrong PINs are throttled, and the server refuses to start on Render without a PIN.
 - `server.test.js`: starts the server in demo mode and exercises upload, re-run, image serving, rejecting a non-image, settings and history.
 
 The sample extractions are in `test/fixtures/`. To test real photos against the live API, put them in `test/images/` and run:
@@ -165,9 +200,11 @@ server.js            Express server and API routes
 lib/extract.js       Claude prompt, JSON schema, API call
 lib/workbook.js      Read, append and export .xlsx (ExcelJS)
 lib/store.js         Settings, history and photo files
+lib/auth.js          Optional PIN login
 public/              Web app (index.html, app.js, style.css)
 public/shared.js     Mapping, validation and TSV (shared with the tests)
 scripts/             demo.js, try-image.js
 test/                Automated tests and sample fixtures
 start.bat            Windows launcher
+../render.yaml       Render Blueprint (at the repository root)
 ```

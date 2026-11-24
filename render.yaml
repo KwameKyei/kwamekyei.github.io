@@ -1,0 +1,31 @@
+# Render Blueprint for Waybill Logger (the app lives in waybill-logger/).
+# In Render: New > Blueprint > pick this repository. You will be asked for ANTHROPIC_API_KEY and ACCESS_PIN.
+services:
+  - type: web
+    name: waybill-logger
+    runtime: node
+    rootDir: waybill-logger
+    region: frankfurt
+    # A persistent disk (needed to keep settings, history and photos) requires a paid instance.
+    plan: starter
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: waybill-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ACCESS_PIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+      - key: NODE_VERSION
+        value: "22"
+      - key: CLAUDE_EFFORT
+        value: high

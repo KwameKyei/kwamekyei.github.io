@@ -36,15 +36,59 @@ function toast(msg, ms = 2600) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.remove('show'), ms);
 }
-async function api(url, opts = {}) {
+async function api(url, opts = {}, retried = false) {
   const res = await fetch(url, opts);
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
-    throw new Error(msg);
+    let body = {};
+    try { body = await res.clone().json(); } catch { /* not JSON */ }
+    if (res.status === 401 && body.needPin && !retried) {
+      await requirePin();
+      return api(url, opts, true);
+    }
+    throw new Error(body.error || `${res.status} ${res.statusText}`);
   }
   return res;
 }
+
+// ---------- PIN ----------
+let pinWaiters = null;
+function requirePin() {
+  if (!pinWaiters) {
+    pinWaiters = [];
+    $('#pinOverlay').hidden = false;
+    $('#pinError').textContent = '';
+    $('#pinInput').value = '';
+    setTimeout(() => $('#pinInput').focus(), 50);
+  }
+  return new Promise((resolve) => pinWaiters.push(resolve));
+}
+$('#pinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: $('#pinInput').value }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $('#pinError').textContent = body.error || 'Wrong PIN.';
+      $('#pinInput').select();
+      return;
+    }
+    $('#pinOverlay').hidden = true;
+    const waiters = pinWaiters || [];
+    pinWaiters = null;
+    waiters.forEach((w) => w());
+  } catch {
+    $('#pinError').textContent = 'Could not reach the server.';
+  } finally {
+    btn.disabled = false;
+  }
+});
+$('#logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+});
+
 const fmtNum = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? (v ?? '') : Number(v).toLocaleString('en-US'));
 
 // ---------- image downsizing ----------
@@ -123,7 +167,7 @@ async function runJob({ row, file, rerun }) {
     let res;
     if (rerun) {
       update({ status: 'reading', progress: 1, error: '' });
-      res = await fetch(`/api/extract/${row.id}/rerun`, { method: 'POST' }).then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }));
+      res = await fetch(`/api/extract/${row.id}/rerun`, { method: 'POST' }).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) }));
     } else {
       update({ status: 'preparing', progress: 0 });
       const blob = await prepareImage(file);
@@ -136,6 +180,11 @@ async function runJob({ row, file, rerun }) {
         if (p >= 1) row.status = 'reading';
         renderRowStatus(row);
       });
+    }
+    if (res.status === 401 && res.body.needPin) {
+      update({ status: 'queued', progress: 0 });
+      await requirePin();
+      return runJob({ row, file, rerun });
     }
     if (res.body.imageUrl) row.imageUrl = res.body.imageUrl;
     if (!res.ok) throw new Error(res.body.error || 'Extraction failed');
@@ -523,19 +572,36 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveHistoryNow, 800);
 }
-async function saveHistoryNow() {
+function historyPayload() {
   const rows = state.rows.map(({ id, fileName, status, error, extraction, edits, imageUrl, appended, model }) => ({
     id, fileName, status: ['done', 'error'].includes(status) ? status : 'error',
     error: ['done', 'error'].includes(status) ? error : 'Interrupted. Press ↻ to re-run.',
     extraction, edits, imageUrl, appended, model,
   }));
+  return JSON.stringify({ startNo: state.startNo, rows });
+}
+async function saveHistoryNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
   try {
-    await api(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startNo: state.startNo, rows }) });
+    await api(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: historyPayload() });
     if (!document.querySelector(`#historyDays [data-day="${state.day}"]`)) loadHistoryDays();
   } catch (e) {
     toast(`Could not save history: ${e.message}`);
   }
 }
+
+// Leaving or hiding the page (closing the tab, switching apps on a phone): save at once.
+function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const body = historyPayload();
+  // Browsers cap keepalive requests at 64 KB; larger days use a normal request.
+  fetch(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: body.length < 60000 }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushSave());
+window.addEventListener('pagehide', flushSave);
 
 async function loadDay(day) {
   if (state.rows.some((r) => !['done', 'error'].includes(r.status))) {
@@ -652,6 +718,11 @@ window.addEventListener('beforeunload', (e) => {
 // ---------- startup ----------
 (async function init() {
   renderHead();
+  try {
+    const sess = await (await fetch('/api/session')).json();
+    if (sess.required) $('#logoutBtn').hidden = false;
+    if (sess.required && !sess.ok) await requirePin();
+  } catch { /* server unreachable: later calls will show the error */ }
   try {
     state.settings = await (await api('/api/settings')).json();
   } catch (e) {
