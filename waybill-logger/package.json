@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "demo": "node scripts/demo.js",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.js\"",
     "try-image": "node scripts/try-image.js"
   },
   "dependencies": {
@@ -19,6 +19,6 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

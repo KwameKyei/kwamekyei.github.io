@@ -1,34 +1,18 @@
 // PIN protection: API locked until the right PIN is entered; brute force is throttled.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { startServer, spawnServer } from './helpers.js';
 
-const CWD = fileURLToPath(new URL('..', import.meta.url));
-const PORT = 4000 + Math.floor(Math.random() * 90);
-const BASE = `http://127.0.0.1:${PORT}`;
 let proc;
+let BASE;
 let dataDir;
-
-function start(env) {
-  return spawn(process.execPath, ['server.js'], {
-    cwd: CWD,
-    env: { ...process.env, HOST: '127.0.0.1', MOCK_EXTRACTION: '1', ANTHROPIC_API_KEY: '', RENDER: '', REQUIRE_PIN: '', ...env },
-    stdio: 'pipe',
-  });
-}
 
 before(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'waybill-auth-'));
-  proc = start({ PORT: String(PORT), DATA_DIR: dataDir, ACCESS_PIN: '482913', SESSION_SECRET: 'test-secret' });
-  for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(`${BASE}/api/health`)).ok) return; } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('server did not start');
+  ({ proc, base: BASE } = await startServer({ DATA_DIR: dataDir, ACCESS_PIN: '482913', SESSION_SECRET: 'test-secret' }));
 });
 after(async () => {
   proc?.kill();
@@ -66,7 +50,7 @@ test('wrong PINs are throttled after 5 attempts, even before the right one', asy
 });
 
 test('refuses to start on Render without a PIN', async () => {
-  const p = start({ PORT: String(PORT + 1), DATA_DIR: dataDir, ACCESS_PIN: '', RENDER: 'true' });
+  const p = spawnServer({ DATA_DIR: dataDir, RENDER: 'true' });
   const code = await new Promise((resolve) => p.on('exit', resolve));
   assert.equal(code, 1);
 });

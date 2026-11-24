@@ -24,7 +24,7 @@ The row details (tap ▸) also show what is not copied: driver, destination(s), 
 
 ### One-time setup
 
-1. Install **Node.js LTS** (version 20 or newer) from <https://nodejs.org>. Accept the defaults.
+1. Install **Node.js LTS** (version 22 or newer) from <https://nodejs.org>. Accept the defaults.
 2. Copy the `waybill-logger` folder to the PC, for example `C:\WaybillLogger`.
 3. Double-click **`start.bat`**. The first time, it creates a `.env` file and opens it in Notepad.
 4. Replace `sk-ant-your-key-here` with your Claude API key (from <https://console.anthropic.com>). Save the file and close Notepad.

@@ -16,7 +16,7 @@ import { inspectWorkbook, appendToWorkbook, exportWorkbook } from './lib/workboo
 import { createAuth } from './lib/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000; // PORT=0 picks a free port
 const HOST = process.env.HOST || '0.0.0.0';
 
 const ON_RENDER = !!process.env.RENDER;
@@ -153,12 +153,13 @@ app.use((err, req, res, next) => {
 });
 
 await ensureDirs();
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
+  const port = server.address().port;
   console.log(`\nWaybill Logger is running.`);
-  console.log(`  On this PC:     http://localhost:${PORT}`);
+  console.log(`  On this PC:     http://localhost:${port}`);
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const a of addrs || []) {
-      if (a.family === 'IPv4' && !a.internal) console.log(`  On your phone:  http://${a.address}:${PORT}  (same Wi-Fi)`);
+      if (a.family === 'IPv4' && !a.internal) console.log(`  On your phone:  http://${a.address}:${port}  (same Wi-Fi)`);
     }
   }
   if (process.env.MOCK_EXTRACTION === '1') console.log('  MOCK_EXTRACTION=1: images are NOT sent to Claude; sample data is returned.');
