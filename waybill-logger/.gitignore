@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/
+*.log
+test/images/*.jpg
+test/images/*.jpeg
+test/images/*.png

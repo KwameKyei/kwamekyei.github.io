@@ -1,0 +1,29 @@
+{
+  "is_sorl_waybill": true,
+  "waybill_no": "SORL00061973",
+  "date": "23/11/2026",
+  "date_iso": "2026-11-23",
+  "truck_number": "GM131-25",
+  "customer_order_number": "4500123456",
+  "product_name": "GASOIL 50PPM",
+  "transporter": "KOFI ASANTE TRANSPORT",
+  "supplier": "SAGE DISTRIBUTION LIMITED",
+  "customer": "MPB PETROLEUM LIMITED",
+  "driver": "KWABENA MENSAH",
+  "destinations": ["KUMASI"],
+  "loading_start": "23/11/2026 08:14",
+  "loading_end": "23/11/2026 08:52",
+  "order_qty_20c": 54000,
+  "loaded_gross": 54210,
+  "compartments": [
+    { "number": "1", "ordered": 18000, "actual_load": 18070, "temperature": 31.2 },
+    { "number": "2", "ordered": 18000, "actual_load": 18068, "temperature": 31.4 },
+    { "number": "3", "ordered": 18000, "actual_load": 18072, "temperature": 31.3 },
+    { "number": "4", "ordered": 0, "actual_load": 0, "temperature": null }
+  ],
+  "average_temperature": 31.3,
+  "density": 0.8352,
+  "unreadable_fields": [],
+  "uncertain_fields": [],
+  "notes": null
+}
