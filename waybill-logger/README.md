@@ -24,7 +24,7 @@ The row details (tap ▸) also show what is not copied: driver, destination(s), 
 
 ### One-time setup
 
-1. Install **Node.js LTS** (version 20 or newer) from <https://nodejs.org>. Accept the defaults.
+1. Install **Node.js LTS** (version 22 or newer) from <https://nodejs.org>. Accept the defaults.
 2. Copy the `waybill-logger` folder to the PC, for example `C:\WaybillLogger`.
 3. Double-click **`start.bat`**. The first time, it creates a `.env` file and opens it in Notepad.
 4. Replace `sk-ant-your-key-here` with your Claude API key (from <https://console.anthropic.com>). Save the file and close Notepad.
@@ -83,6 +83,49 @@ Demo mode does not send anything to Claude. Each photo returns one of two sample
 
 Each day's rows (including your edits and the photos) are saved on the PC automatically. Reopen any day from **History**, or pick the date.
 
+## Keeping API costs down
+
+Each photo costs money on your Anthropic account. Most of it is the **input**: the photo plus the instructions, about 7,000 tokens per photo. The model's answer is the smaller part.
+
+Measured on real SORL waybills (November 2026, Claude Opus 5.5):
+
+| Setting | Cost per photo |
+|---|---|
+| `CLAUDE_EFFORT=high` (the default) | ≈ $0.053 |
+| `CLAUDE_EFFORT=low` (recommended) | ≈ $0.034 |
+
+Turn on the re-check below only after testing: on real photos it can end up re-reading almost every photo, which roughly doubles the cost.
+
+**See what you spend.** The summary bar shows **API today ≈ $…**, with the number of photos and the average cost per photo. **Settings → Today's API use** adds token totals, how much came from the cache, and the checks that fail most often. Every call is logged in `data/usage/<day>.jsonl`. These are estimates from token counts at the prices in `lib/usage.js`. Your Anthropic bill is the final figure.
+
+**Free savings (already on):**
+- The instructions are cached, so photos read within 5 minutes of each other pay much less for that part.
+- Uploading the same photo again reuses the earlier reading at no cost. Only **↻** pays for a fresh reading.
+- Set a monthly spend limit in the Anthropic Console's limits settings, so a busy day can't run away.
+- Fill the frame with the waybill when you take the photo. The cost stays the same, but the small print reads better and fewer cells come back uncertain.
+
+**Cheaper settings (test them first).** These trade some reading care for cost, so measure them on your own photos before switching:
+
+| Setting in `.env` | What it does |
+|---|---|
+| `CLAUDE_EFFORT=medium` or `low` | Same model, less thinking. Cheaper and faster. |
+| `CLAUDE_MODEL=claude-haiku-5-5`, `CLAUDE_EFFORT=medium`, `CLAUDE_ESCALATE_MODEL=claude-opus-5-5`, `CLAUDE_ESCALATE_EFFORT=high` | Every photo is read by the much cheaper Haiku 5.5. Only photos whose reading fails a check (unreadable fields, totals that don't add up, odd waybill number, blank key fields) are read again by Opus 5.5. Fields the model is merely unsure of don't trigger a re-read; they stay highlighted yellow for you to check. The summary bar shows how many were re-checked. |
+
+A failed check is a good signal but not a guarantee: a cheap model can misread a truck or order number and still pass every check. That is why you should compare first.
+
+**Compare settings on your own photos.** Use 20 or so photos that are already typed into your spreadsheet. The photos the app has already read are kept in `data\images`, so you can point at that folder with `--limit 20`, or put your own photos in a folder. Then run:
+
+```bat
+npm run compare -- --photos C:\WaybillPhotos --truth "C:\path\to\LOADING.xlsx"
+```
+
+By default this tries three settings: Opus `high` (today's), Opus `low`, and Haiku first with Opus re-checks. Use `--configs "model:effort,..."` to choose others. For each setting it prints:
+- field accuracy;
+- **silent errors**: wrong values that were *not* highlighted, the ones that would slip into your sheet;
+- cost per photo.
+
+Every wrong field is listed in `compare-results.csv`. The test itself costs money, roughly what those photos cost today times the number of settings. Pick the cheapest setting with no silent errors.
+
 ## Checks
 
 - The sum of compartment **actual loads** must equal **LOADED GROSS**, and the sum of compartment **ordered** quantities must equal **Order Quantity@20°C**. Compartments showing 0 are empty trailer compartments and are ignored. If any compartment value is unreadable, the total is not checked and you get a warning.
@@ -123,6 +166,8 @@ Matching ignores letter case, extra spaces and punctuation, but otherwise must b
 | `PORT` | `3000` | Port number |
 | `HOST` | `0.0.0.0` | Use `127.0.0.1` to block other devices |
 | `DATA_DIR` | `./data` | Where settings, history and photos are stored |
+| `CLAUDE_ESCALATE_MODEL` | (off) | Re-read photos that fail a check with this model (see "Keeping API costs down") |
+| `CLAUDE_ESCALATE_EFFORT` | `high` | Effort for the re-check |
 | `MOCK_EXTRACTION` | (off) | `1` = demo mode with no API calls |
 
 Requests include Claude's server-side refusal fallback (`fallbacks: "default"`). If the main model declines an image, a fallback model reads it within the same call.
@@ -134,6 +179,8 @@ data/
   settings.json          mapping tables
   history/2026-11-23.json one file per day: rows, edits, start number
   images/<id>.img        downsized photos (used for re-run and review)
+  usage/2026-11-23.jsonl  one line per API call: model, tokens, estimated cost
+  cache/<hash>.json       earlier readings, so the same photo is never paid for twice
 ```
 
 Back up the `data` folder to keep your history and mappings. Delete old files in `data/images` to free space.
@@ -148,6 +195,7 @@ The automated sample cases (`test/`) cover:
 
 - `shared.test.js`: a clean waybill to the exact 12 copied columns (including the TSV line); an empty compartment being ignored; unreadable fields left blank and highlighted; an unknown company shown in full, then mapped once a short name is saved; a compartment total mismatch; a wrong-day warning; multiple destinations in NOTES; duplicates in the batch and in the workbook; user edits overriding values; no totals check when a compartment is unreadable; sorting; and date formats.
 - `workbook.test.js`: header and last-row detection, appending below the last row, keeping fonts, borders and number formats, copying a formula column down, and the new-file export.
+- `cost.test.js`: which readings get re-checked, the two-pass flow (a clean cheap reading is kept, a doubtful one is re-read), cost estimates, and the daily spend totals.
 - `server.test.js`: starts the server in demo mode and exercises upload, re-run, image serving, rejecting a non-image, settings and history.
 
 The sample extractions are in `test/fixtures/`. To test real photos against the live API, put them in `test/images/` and run:
@@ -167,7 +215,8 @@ lib/workbook.js      Read, append and export .xlsx (ExcelJS)
 lib/store.js         Settings, history and photo files
 public/              Web app (index.html, app.js, style.css)
 public/shared.js     Mapping, validation and TSV (shared with the tests)
-scripts/             demo.js, try-image.js
+scripts/             demo.js, try-image.js, compare.js (cost/accuracy comparison)
+lib/usage.js         Cost estimates and the daily usage log
 test/                Automated tests and sample fixtures
 start.bat            Windows launcher
 ```

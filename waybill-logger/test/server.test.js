@@ -1,15 +1,13 @@
 // End-to-end: start the server in mock mode and exercise the HTTP API.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { startServer } from './helpers.js';
 
-const PORT = 3900 + Math.floor(Math.random() * 90);
-const BASE = `http://127.0.0.1:${PORT}`;
 let proc;
+let BASE;
 let dataDir;
 
 // Smallest valid JPEG header is enough for type sniffing in mock mode.
@@ -17,16 +15,7 @@ const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(
 
 before(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'waybill-'));
-  proc = spawn(process.execPath, ['server.js'], {
-    cwd: fileURLToPath(new URL('..', import.meta.url)),
-    env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', MOCK_EXTRACTION: '1', DATA_DIR: dataDir, ANTHROPIC_API_KEY: '' },
-    stdio: 'pipe',
-  });
-  for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(`${BASE}/api/health`)).ok) return; } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('server did not start');
+  ({ proc, base: BASE } = await startServer({ DATA_DIR: dataDir }));
 });
 after(async () => {
   proc?.kill();

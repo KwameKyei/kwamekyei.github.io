@@ -3,16 +3,29 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildRow, validateRow, countWaybills } from '../public/shared.js';
+import { estimateCost } from './usage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// First pass. Every photo is read with this model and effort.
 export const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 export const EFFORT = process.env.CLAUDE_EFFORT || 'high';
+// Optional second pass: when set, a photo whose first reading fails any check (unreadable or
+// uncertain fields, totals that don't add up, odd waybill number...) is read again with this model.
+export const ESCALATE_MODEL = process.env.CLAUDE_ESCALATE_MODEL || '';
+export const ESCALATE_EFFORT = process.env.CLAUDE_ESCALATE_EFFORT || 'high';
 
-const str = { type: ['string', 'null'] };
+// Models that accept the server-side refusal fallback parameter. Others are called without it.
+const FALLBACK_MODELS = ['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-fable-5-2'];
+
+// Structured outputs allow at most 16 union-typed (nullable) fields per schema, so text fields
+// use "" for "unreadable / not present" and only the numbers are nullable (7 unions in total).
+const str = { type: 'string' };
 const numOrNull = { type: ['number', 'null'] };
 
-// JSON schema enforced by structured outputs. Every field is required; unreadable values are null.
+// JSON schema enforced by structured outputs. Every field is required; unreadable text is "" and
+// unreadable numbers are null.
 export const WAYBILL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -67,7 +80,7 @@ The photos are taken on a phone at a loading depot. Expect tilt, shadows, glare,
 
 Field guide (use the label printed on the waybill):
 - waybill_no: the waybill number, normally "SORL" followed by 8 digits, e.g. "SORL00061973". Copy every digit including leading zeros.
-- date: the DATE printed on the waybill, exactly as printed. date_iso: the same date as YYYY-MM-DD (day comes before month on these waybills). null if any part is unreadable.
+- date: the DATE printed on the waybill, exactly as printed. date_iso: the same date as YYYY-MM-DD (day comes before month on these waybills). Empty string if any part is unreadable.
 - truck_number: the truck / vehicle number in the header, e.g. "GM131-25" or "GT 4521-19". Keep letters, digits and the hyphen as printed.
 - customer_order_number: the value labelled "Customer order Number".
 - product_name: the product description as printed, e.g. "GASOIL 50PPM", "PREMIUM/GASOLINE", "HEAVY FUEL OIL".
@@ -85,11 +98,11 @@ Field guide (use the label printed on the waybill):
 - is_sorl_waybill: false if the photo is not a SORL waybill.
 
 Rules:
-- Never guess. If a value is unreadable, cut off, covered by a pen mark, or you cannot tell it apart from ghost text, set it to null and add the field name to unreadable_fields. Do not fill a value from what it "should" be, and do not compute a total from the compartments.
+- Never guess. If a value is unreadable, cut off, covered by a pen mark, or you cannot tell it apart from ghost text, leave it empty (an empty string "" for text, null for a number) and add the field name to unreadable_fields. Do not fill a value from what it "should" be, and do not compute a total from the compartments.
 - If you can read a value but are not fully sure of a character or digit, give your best reading and add the field name to uncertain_fields.
 - Quantities are litres. Return numbers without thousands separators or units (e.g. 40000, not "40,000 L"). Use a decimal point for decimals.
 - Use the JSON field names exactly as given above in unreadable_fields and uncertain_fields.
-- notes: one short sentence about anything a reviewer should know (handwritten corrections, a value crossed out, a second page, multiple destinations). null if nothing.`;
+- notes: one short sentence about anything a reviewer should know (handwritten corrections, a value crossed out, a second page, multiple destinations). Empty string if nothing.`;
 
 let client;
 function getClient() {
@@ -111,23 +124,16 @@ async function mockExtraction() {
   return JSON.parse(await fs.readFile(file, 'utf8'));
 }
 
-/**
- * @param {Buffer} imageBuffer JPEG/PNG/WebP bytes
- * @param {string} mediaType e.g. image/jpeg
- */
-export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg') {
-  if (process.env.MOCK_EXTRACTION === '1') {
-    return { extraction: await mockExtraction(), model: 'mock', usage: null };
-  }
-
-  const response = await getClient().beta.messages.create({
-    model: MODEL,
+/** One model call: returns { extraction, model, usage }. */
+export async function readWithModel(imageBuffer, mediaType, { model, effort }) {
+  const params = {
+    model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    system: SYSTEM_PROMPT,
+    // Same instructions for every photo: cache them so photos read within 5 minutes of each other
+    // pay the much lower cache-read price for this part. The photo itself comes after and is never cached.
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     output_config: {
-      effort: EFFORT,
+      effort,
       format: { type: 'json_schema', schema: WAYBILL_SCHEMA },
     },
     messages: [
@@ -139,22 +145,102 @@ export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg') {
         ],
       },
     ],
-  });
+  };
+  const response = FALLBACK_MODELS.includes(model)
+    ? await getClient().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+    : await getClient().messages.create(params);
 
   if (response.stop_reason === 'refusal') {
-    throw Object.assign(new Error('The model declined to read this image.'), { status: 422 });
+    throw Object.assign(new Error('The model declined to read this image.'), { status: 422, usage: response.usage, model: response.model });
   }
   if (response.stop_reason === 'max_tokens') {
-    throw Object.assign(new Error('The response was cut off. Try re-running this image.'), { status: 502 });
+    throw Object.assign(new Error('The response was cut off. Try re-running this image.'), { status: 502, usage: response.usage, model: response.model });
   }
   const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   let extraction;
   try {
     extraction = JSON.parse(text);
   } catch {
-    throw Object.assign(new Error('The model did not return valid JSON. Try re-running this image.'), { status: 502 });
+    throw Object.assign(new Error('The model did not return valid JSON. Try re-running this image.'), { status: 502, usage: response.usage, model: response.model });
   }
   return { extraction, model: response.model, usage: response.usage };
+}
+
+const KEY_CELLS = ['date', 'truck', 'orderNo', 'waybill', 'product', 'transporter', 'bdc', 'omc', 'ordered', 'loaded'];
+
+/** Why a reading should be checked by the stronger model (empty list = it passed every check). */
+export function escalationReasons(x) {
+  const reasons = [];
+  if (!x || typeof x !== 'object') return ['no reading'];
+  if (x.is_sorl_waybill === false) reasons.push('not a SORL waybill');
+  if (x.unreadable_fields?.length) reasons.push(`unreadable: ${x.unreadable_fields.join(', ')}`);
+  if (x.uncertain_fields?.length) reasons.push(`uncertain: ${x.uncertain_fields.join(', ')}`);
+  // Mapping tables don't matter here: an unknown company name is not a reading problem.
+  const { cells } = buildRow(x, { products: {}, companies: {} });
+  const blank = KEY_CELLS.filter((k) => cells[k] === '' || cells[k] === null);
+  if (blank.length) reasons.push(`blank: ${blank.join(', ')}`);
+  for (const i of validateRow(x, cells, { sessionWaybills: countWaybills([cells]) })) reasons.push(i.msg);
+  return reasons;
+}
+
+/**
+ * Read a waybill: first pass with MODEL/EFFORT, then (if ESCALATE_MODEL is set and the first
+ * reading fails a check) a second pass with ESCALATE_MODEL/ESCALATE_EFFORT.
+ * Returns { extraction, model, usage, cost, passes: [{ stage, model, effort, usage, cost, reasons }] }.
+ * onPass(pass) is called for every model call, including failed ones, so cost can be logged.
+ */
+export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg', {
+  onPass, model = MODEL, effort = EFFORT, escalateModel = ESCALATE_MODEL, escalateEffort = ESCALATE_EFFORT,
+  reader = readWithModel, // tests pass a stand-in here
+} = {}) {
+  if (process.env.MOCK_EXTRACTION === '1' && reader === readWithModel) {
+    return { extraction: await mockExtraction(), model: 'mock', usage: null, cost: 0, passes: [] };
+  }
+  const passes = [];
+  const run = async (stage, model, effort) => {
+    try {
+      const r = await reader(imageBuffer, mediaType, { model, effort });
+      const pass = {
+        stage, model: r.model, effort, usage: r.usage, cost: estimateCost(r.model, r.usage),
+        // Which checks this reading fails; logged for every pass so re-check decisions can be reviewed.
+        reasons: escalationReasons(r.extraction),
+      };
+      passes.push(pass);
+      await onPass?.(pass);
+      return r;
+    } catch (err) {
+      if (err.usage) {
+        const pass = { stage, model: err.model || model, effort, usage: err.usage, cost: estimateCost(err.model || model, err.usage), error: err.message };
+        passes.push(pass);
+        await onPass?.(pass);
+      }
+      throw err;
+    }
+  };
+
+  let first;
+  try {
+    first = await run('first', model, effort);
+  } catch (err) {
+    // A failed cheap pass (refusal, cut off, bad JSON) goes straight to the stronger model.
+    if (!escalateModel) throw err;
+  }
+  let result = first;
+  if (escalateModel) {
+    // "Uncertain" alone doesn't trigger a re-check: on real photos nearly every reading marks the small
+    // print (waybill and order numbers) as uncertain. Those cells stay highlighted yellow for review.
+    const reasons = first ? passes[0].reasons.filter((r) => !String(r).startsWith('uncertain:')) : ['first pass failed'];
+    if (reasons.length) result = await run('escalation', escalateModel, escalateEffort);
+  }
+  const total = (k) => passes.reduce((n, p) => n + (p.usage?.[k] || 0), 0);
+  const costs = passes.map((p) => p.cost);
+  return {
+    extraction: result.extraction,
+    model: result.model,
+    usage: { input_tokens: total('input_tokens'), output_tokens: total('output_tokens') },
+    cost: costs.some((c) => c === null) ? null : costs.reduce((a, b) => a + b, 0),
+    passes,
+  };
 }
 
 /** Turn SDK errors into a short message for the UI. */

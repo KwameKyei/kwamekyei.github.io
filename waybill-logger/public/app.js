@@ -39,12 +39,13 @@ function toast(msg, ms = 2600) {
 async function api(url, opts = {}) {
   const res = await fetch(url, opts);
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
-    throw new Error(msg);
+    let body = {};
+    try { body = await res.clone().json(); } catch { /* not JSON */ }
+    throw new Error(body.error || `${res.status} ${res.statusText}`);
   }
   return res;
 }
+
 const fmtNum = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? (v ?? '') : Number(v).toLocaleString('en-US'));
 
 // ---------- image downsizing ----------
@@ -123,7 +124,7 @@ async function runJob({ row, file, rerun }) {
     let res;
     if (rerun) {
       update({ status: 'reading', progress: 1, error: '' });
-      res = await fetch(`/api/extract/${row.id}/rerun`, { method: 'POST' }).then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }));
+      res = await fetch(`/api/extract/${row.id}/rerun`, { method: 'POST' }).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) }));
     } else {
       update({ status: 'preparing', progress: 0 });
       const blob = await prepareImage(file);
@@ -141,6 +142,8 @@ async function runJob({ row, file, rerun }) {
     if (!res.ok) throw new Error(res.body.error || 'Extraction failed');
     row.extraction = res.body.extraction;
     row.model = res.body.model;
+    row.cost = res.body.cost;
+    row.escalated = !!res.body.escalated;
     row.status = 'done';
     row.error = '';
   } catch (e) {
@@ -149,6 +152,34 @@ async function runJob({ row, file, rerun }) {
   }
   render();
   scheduleSave();
+  refreshUsage();
+}
+
+// ---------- API spend ----------
+let usageTimer;
+function refreshUsage() {
+  clearTimeout(usageTimer);
+  usageTimer = setTimeout(async () => {
+    try {
+      state.usage = await (await api('/api/usage')).json();
+      render();
+      renderUsageStats();
+    } catch { /* not important */ }
+  }, 300);
+}
+const money = (n) => `$${(n || 0).toFixed(n >= 1 ? 2 : 3)}`;
+
+function renderUsageStats() {
+  const u = state.usage;
+  if (!u || !u.calls) return;
+  const fails = Object.entries(u.checkFailures || {}).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const firsts = u.calls - u.escalations;
+  $('#usageStats').innerHTML = `
+    <p>${u.waybills} photo(s), ${u.calls} API call(s), ≈ ${money(u.cost)} (${money(u.costPerWaybill)} per photo).
+      ${u.escalations ? `${u.escalations} re-checked.` : ''} ${u.cachedHits ? `${u.cachedHits} repeat photo(s) reused for free.` : ''}</p>
+    <p>Tokens: ${u.inputTokens.toLocaleString()} in (${u.cacheReadTokens.toLocaleString()} from cache), ${u.outputTokens.toLocaleString()} out.</p>
+    ${fails.length ? `<p><b>Most common failed checks</b> (out of ${firsts} first reading(s)):</p>
+    <ul>${fails.map(([k, n]) => `<li>${esc(k)}: <b>${n}</b></li>`).join('')}</ul>` : ''}`;
 }
 
 function rerunRow(id) {
@@ -287,6 +318,9 @@ function render() {
     errors ? `<span class="chip bad">${errors} need attention</span>` : '',
     warns ? `<span class="chip warn">${warns} with warnings</span>` : '',
     `<span class="chip">Loaded total ${fmtNum(loaded)} L</span>`,
+    state.usage && state.usage.calls
+      ? `<span class="chip" title="Estimated from token counts; your Anthropic bill is the final figure.">API today ≈ ${money(state.usage.cost)} · ${state.usage.waybills} photo(s) · ${money(state.usage.costPerWaybill)} each${state.usage.escalations ? ` · ${state.usage.escalations} re-checked` : ''}</span>`
+      : '',
   ].join('');
 }
 
@@ -523,19 +557,36 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveHistoryNow, 800);
 }
-async function saveHistoryNow() {
-  const rows = state.rows.map(({ id, fileName, status, error, extraction, edits, imageUrl, appended, model }) => ({
+function historyPayload() {
+  const rows = state.rows.map(({ id, fileName, status, error, extraction, edits, imageUrl, appended, model, cost, escalated }) => ({
     id, fileName, status: ['done', 'error'].includes(status) ? status : 'error',
     error: ['done', 'error'].includes(status) ? error : 'Interrupted. Press ↻ to re-run.',
-    extraction, edits, imageUrl, appended, model,
+    extraction, edits, imageUrl, appended, model, cost, escalated,
   }));
+  return JSON.stringify({ startNo: state.startNo, rows });
+}
+async function saveHistoryNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
   try {
-    await api(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startNo: state.startNo, rows }) });
+    await api(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: historyPayload() });
     if (!document.querySelector(`#historyDays [data-day="${state.day}"]`)) loadHistoryDays();
   } catch (e) {
     toast(`Could not save history: ${e.message}`);
   }
 }
+
+// Leaving or hiding the page (closing the tab, switching apps on a phone): save at once.
+function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const body = historyPayload();
+  // Browsers cap keepalive requests at 64 KB; larger days use a normal request.
+  fetch(`/api/history/${state.day}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: body.length < 60000 }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushSave());
+window.addEventListener('pagehide', flushSave);
 
 async function loadDay(day) {
   if (state.rows.some((r) => !['done', 'error'].includes(r.status))) {
@@ -660,10 +711,11 @@ window.addEventListener('beforeunload', (e) => {
   renderSettings();
   try {
     const h = await (await api('/api/health')).json();
-    $('#serverInfo').textContent = `Model: ${h.model} · effort: ${h.effort} · API key: ${h.hasKey ? 'set' : 'MISSING'}${h.mock ? ' · MOCK MODE (sample data, no API calls)' : ''}`;
+    $('#serverInfo').textContent = `Model: ${h.model} · effort: ${h.effort}${h.escalateModel ? ` · re-check failed readings with ${h.escalateModel} (${h.escalateEffort})` : ''} · API key: ${h.hasKey ? 'set' : 'MISSING'}${h.mock ? ' · MOCK MODE (sample data, no API calls)' : ''}`;
     const w = $('#keyWarning');
     if (h.mock) { w.hidden = false; w.textContent = 'Mock mode is on: photos are not read, each image returns one of two sample waybills.'; }
     else if (!h.hasKey) { w.hidden = false; w.textContent = 'The Claude API key is missing. Add ANTHROPIC_API_KEY to the .env file and restart the server.'; }
   } catch { /* ignore */ }
   await loadDay(state.day);
+  refreshUsage();
 })();

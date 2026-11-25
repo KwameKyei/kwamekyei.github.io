@@ -5,3 +5,4 @@ data/
 test/images/*.jpg
 test/images/*.jpeg
 test/images/*.png
+compare-results.csv
