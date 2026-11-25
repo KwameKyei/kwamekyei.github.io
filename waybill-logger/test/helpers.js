@@ -8,8 +8,7 @@ export function spawnServer(env) {
   return spawn(process.execPath, ['server.js'], {
     cwd: CWD,
     env: {
-      ...process.env, PORT: '0', HOST: '127.0.0.1', MOCK_EXTRACTION: '1', ANTHROPIC_API_KEY: '',
-      RENDER: '', REQUIRE_PIN: '', ACCESS_PIN: '', ...env,
+      ...process.env, PORT: '0', HOST: '127.0.0.1', MOCK_EXTRACTION: '1', ANTHROPIC_API_KEY: '', ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -14,34 +14,17 @@ import {
 } from './lib/store.js';
 import { logUsage, usageSummary } from './lib/usage.js';
 import { inspectWorkbook, appendToWorkbook, exportWorkbook } from './lib/workbook.js';
-import { createAuth } from './lib/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000; // PORT=0 picks a free port
 const HOST = process.env.HOST || '0.0.0.0';
 
-const ON_RENDER = !!process.env.RENDER;
-const auth = createAuth();
-if ((ON_RENDER || process.env.REQUIRE_PIN === '1') && !auth.required) {
-  console.error('ACCESS_PIN is not set. Refusing to start on a public host without a PIN.');
-  process.exit(1);
-}
-if (auth.required && String(process.env.ACCESS_PIN).trim().length < 6) {
-  console.warn('WARNING: ACCESS_PIN is shorter than 6 characters. Use a longer PIN on a public host.');
-}
-
 const app = express();
-// Behind Render's (or any) HTTPS proxy: trust X-Forwarded-* so req.ip and req.secure are right.
-if (ON_RENDER || process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 app.disable('x-powered-by');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.get('/api/session', auth.session);
-app.post('/api/login', auth.login);
-app.post('/api/logout', auth.logout);
-app.use(auth.middleware);
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -99,7 +82,6 @@ app.get('/api/health', (req, res) => {
     escalateEffort: ESCALATE_EFFORT,
     hasKey: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     mock: process.env.MOCK_EXTRACTION === '1',
-    pin: auth.required,
   });
 });
 
@@ -196,6 +178,5 @@ const server = app.listen(PORT, HOST, () => {
   }
   if (process.env.MOCK_EXTRACTION === '1') console.log('  MOCK_EXTRACTION=1: images are NOT sent to Claude; sample data is returned.');
   else if (!process.env.ANTHROPIC_API_KEY) console.log('  WARNING: ANTHROPIC_API_KEY is not set. Add it to .env');
-  console.log(`  PIN: ${auth.required ? 'required' : 'off (set ACCESS_PIN in .env to require one)'}`);
   console.log(`  Model: ${MODEL} (effort ${EFFORT})${ESCALATE_MODEL ? `, re-checks with ${ESCALATE_MODEL} (effort ${ESCALATE_EFFORT})` : ''}\n`);
 });
