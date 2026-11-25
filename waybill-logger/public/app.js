@@ -211,10 +211,24 @@ function refreshUsage() {
     try {
       state.usage = await (await api('/api/usage')).json();
       render();
+      renderUsageStats();
     } catch { /* not important */ }
   }, 300);
 }
 const money = (n) => `$${(n || 0).toFixed(n >= 1 ? 2 : 3)}`;
+
+function renderUsageStats() {
+  const u = state.usage;
+  if (!u || !u.calls) return;
+  const fails = Object.entries(u.checkFailures || {}).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const firsts = u.calls - u.escalations;
+  $('#usageStats').innerHTML = `
+    <p>${u.waybills} photo(s), ${u.calls} API call(s), ≈ ${money(u.cost)} (${money(u.costPerWaybill)} per photo).
+      ${u.escalations ? `${u.escalations} re-checked.` : ''} ${u.cachedHits ? `${u.cachedHits} repeat photo(s) reused for free.` : ''}</p>
+    <p>Tokens: ${u.inputTokens.toLocaleString()} in (${u.cacheReadTokens.toLocaleString()} from cache), ${u.outputTokens.toLocaleString()} out.</p>
+    ${fails.length ? `<p><b>Most common failed checks</b> (out of ${firsts} first reading(s)):</p>
+    <ul>${fails.map(([k, n]) => `<li>${esc(k)}: <b>${n}</b></li>`).join('')}</ul>` : ''}`;
+}
 
 function rerunRow(id) {
   const row = state.rows.find((r) => r.id === id);

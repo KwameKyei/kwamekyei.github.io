@@ -129,7 +129,9 @@ export async function readWithModel(imageBuffer, mediaType, { model, effort }) {
   const params = {
     model,
     max_tokens: 16000,
-    system: SYSTEM_PROMPT,
+    // Same instructions for every photo: cache them so photos read within 5 minutes of each other
+    // pay the much lower cache-read price for this part. The photo itself comes after and is never cached.
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     output_config: {
       effort,
       format: { type: 'json_schema', schema: WAYBILL_SCHEMA },
@@ -198,7 +200,11 @@ export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg', {
   const run = async (stage, model, effort) => {
     try {
       const r = await reader(imageBuffer, mediaType, { model, effort });
-      const pass = { stage, model: r.model, effort, usage: r.usage, cost: estimateCost(r.model, r.usage) };
+      const pass = {
+        stage, model: r.model, effort, usage: r.usage, cost: estimateCost(r.model, r.usage),
+        // Which checks this reading fails; logged for every pass so re-check decisions can be reviewed.
+        reasons: escalationReasons(r.extraction),
+      };
       passes.push(pass);
       await onPass?.(pass);
       return r;
@@ -221,8 +227,7 @@ export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg', {
   }
   let result = first;
   if (escalateModel) {
-    const reasons = first ? escalationReasons(first.extraction) : ['first pass failed'];
-    if (passes.length) passes[passes.length - 1].reasons = reasons;
+    const reasons = first ? passes[0].reasons : ['first pass failed'];
     if (reasons.length) result = await run('escalation', escalateModel, escalateEffort);
   }
   const total = (k) => passes.reduce((n, p) => n + (p.usage?.[k] || 0), 0);

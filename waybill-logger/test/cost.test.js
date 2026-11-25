@@ -72,3 +72,20 @@ test('daily spend totals count photos, re-checks and cached repeats', async () =
   assert.equal(s.cost.toFixed(4), '0.0462');
   assert.equal(s.costPerWaybill.toFixed(4), '0.0231');
 });
+
+test('every reading records which checks it failed, even with re-checks off', async () => {
+  const logged = [];
+  const reader = async (b, t, { model }) => ({ extraction: problems, model, usage });
+  await extractWaybill(Buffer.alloc(1), 'image/jpeg', { model: 'claude-opus-5-5', effort: 'low', escalateModel: '', reader, onPass: (p) => logged.push(p) });
+  assert.equal(logged.length, 1);
+  assert.ok(logged[0].reasons.some((r) => r.startsWith('unreadable:')));
+});
+
+test('daily summary counts failed checks per field', async () => {
+  await logUsage({ id: 'd4', stage: 'first', model: 'claude-opus-5-5', usage, cost: 0.04, reasons: ['unreadable: driver, loading_end', 'Compartment actual loads add up to 45,040 but LOADED GROSS is 45,100.'] });
+  await logUsage({ id: 'e5', stage: 'first', model: 'claude-opus-5-5', usage, cost: 0.04, reasons: ['unreadable: driver'] });
+  const s = await usageSummary();
+  assert.equal(s.checkFailures['unreadable: driver'], 2);
+  assert.equal(s.checkFailures['unreadable: loading_end'], 1);
+  assert.equal(s.checkFailures['Compartment actual loads add up to # but LOADED GROSS is #'], 1);
+});

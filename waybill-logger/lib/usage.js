@@ -47,7 +47,7 @@ export async function usageSummary(day = dayOf()) {
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
-  const sum = { day, calls: 0, waybills: 0, escalations: 0, cachedHits: 0, inputTokens: 0, outputTokens: 0, cost: 0, unpriced: 0, byModel: {} };
+  const sum = { day, calls: 0, waybills: 0, escalations: 0, cachedHits: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, cost: 0, unpriced: 0, byModel: {}, checkFailures: {} };
   const images = new Set();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -59,6 +59,16 @@ export async function usageSummary(day = dayOf()) {
     if (e.stage === 'escalation') sum.escalations++;
     sum.inputTokens += (e.usage?.input_tokens || 0) + (e.usage?.cache_read_input_tokens || 0) + (e.usage?.cache_creation_input_tokens || 0);
     sum.outputTokens += e.usage?.output_tokens || 0;
+    sum.cacheReadTokens += e.usage?.cache_read_input_tokens || 0;
+    // Which checks first readings fail, grouped by the kind of check ("unreadable", "uncertain", ...).
+    if (e.stage === 'first') {
+      for (const r of e.reasons || []) {
+        const m = /^(unreadable|uncertain|blank): (.*)$/.exec(String(r));
+        // "unreadable: driver, loading_end" counts once per field; other checks are grouped with numbers removed.
+        const kinds = m ? m[2].split(', ').map((f) => `${m[1]}: ${f}`) : [String(r).replace(/\d[\d,.]*/g, '#').slice(0, 100)];
+        for (const k of kinds) sum.checkFailures[k] = (sum.checkFailures[k] || 0) + 1;
+      }
+    }
     if (typeof e.cost === 'number') sum.cost += e.cost;
     else sum.unpriced++;
     const m = (sum.byModel[e.model] ||= { calls: 0, cost: 0 });
