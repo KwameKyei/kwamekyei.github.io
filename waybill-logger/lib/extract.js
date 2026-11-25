@@ -227,7 +227,9 @@ export async function extractWaybill(imageBuffer, mediaType = 'image/jpeg', {
   }
   let result = first;
   if (escalateModel) {
-    const reasons = first ? passes[0].reasons : ['first pass failed'];
+    // "Uncertain" alone doesn't trigger a re-check: on real photos nearly every reading marks the small
+    // print (waybill and order numbers) as uncertain. Those cells stay highlighted yellow for review.
+    const reasons = first ? passes[0].reasons.filter((r) => !String(r).startsWith('uncertain:')) : ['first pass failed'];
     if (reasons.length) result = await run('escalation', escalateModel, escalateEffort);
   }
   const total = (k) => passes.reduce((n, p) => n + (p.usage?.[k] || 0), 0);

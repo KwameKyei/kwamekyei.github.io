@@ -130,7 +130,7 @@ Each photo costs money on your Anthropic account. With the default settings (Cla
 | Setting in `.env` | What it does |
 |---|---|
 | `CLAUDE_EFFORT=medium` or `low` | Same model, less thinking. Cheaper and faster. |
-| `CLAUDE_MODEL=claude-haiku-5-5`, `CLAUDE_EFFORT=medium`, `CLAUDE_ESCALATE_MODEL=claude-opus-5-5`, `CLAUDE_ESCALATE_EFFORT=high` | Every photo is read by the much cheaper Haiku 5.5. Only photos whose reading fails a check (unreadable or uncertain fields, totals that don't add up, odd waybill number, blank key fields) are read again by Opus 5.5. The summary bar shows how many were re-checked. |
+| `CLAUDE_MODEL=claude-haiku-5-5`, `CLAUDE_EFFORT=medium`, `CLAUDE_ESCALATE_MODEL=claude-opus-5-5`, `CLAUDE_ESCALATE_EFFORT=high` | Every photo is read by the much cheaper Haiku 5.5. Only photos whose reading fails a check (unreadable fields, totals that don't add up, odd waybill number, blank key fields) are read again by Opus 5.5. Fields the model is merely unsure of don't trigger a re-read; they stay highlighted yellow for you to check. The summary bar shows how many were re-checked. |
 
 A failed check is a good signal but not a guarantee: a cheap model can misread a truck or order number and still pass every check. That is why you should compare first.
 

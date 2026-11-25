@@ -89,3 +89,15 @@ test('daily summary counts failed checks per field', async () => {
   assert.equal(s.checkFailures['unreadable: loading_end'], 1);
   assert.equal(s.checkFailures['Compartment actual loads add up to # but LOADED GROSS is #'], 1);
 });
+
+test('an uncertain field alone does not trigger a re-check; a failed check does', async () => {
+  const onlyUncertain = { ...ok, uncertain_fields: ['waybill_no', 'customer_order_number'] };
+  const calls = [];
+  const reader = (answer) => async (b, t, { model, effort }) => { calls.push(effort); return { extraction: answer, model, usage }; };
+  const opts = { model: 'claude-opus-5-5', effort: 'low', escalateModel: 'claude-opus-5-5', escalateEffort: 'high' };
+  await extractWaybill(Buffer.alloc(1), 'image/jpeg', { ...opts, reader: reader(onlyUncertain) });
+  assert.deepEqual(calls, ['low']);
+  calls.length = 0;
+  await extractWaybill(Buffer.alloc(1), 'image/jpeg', { ...opts, reader: reader(problems) });
+  assert.deepEqual(calls, ['low', 'high']);
+});
